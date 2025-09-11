@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Activity, Shield, ShieldAlert, ShieldX, Database } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface NavItem {
   path: string;
@@ -38,6 +39,12 @@ const navItems: NavItem[] = [
 
 export const Navigation: React.FC = () => {
   const location = useLocation();
+  const { isAuthenticated } = useAuth();
+
+  // 인증되지 않은 경우 네비게이션을 숨김
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">

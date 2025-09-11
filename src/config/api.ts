@@ -2,6 +2,7 @@
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_API_BASE_URL || '',
   ENDPOINTS: {
+    LOGIN: '/api/auth/login',
     KAFKA_STREAM: '/api/kafka/stream',
     KAFKA_AUTH: '/api/kafka/auth',
     KAFKA_AUTH_FAILED: '/api/kafka/auth_failed',

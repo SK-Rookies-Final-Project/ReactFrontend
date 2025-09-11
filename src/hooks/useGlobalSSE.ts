@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { LogEntry, LogWithMetadata, LogType, ConnectionStatus } from '../types/kafka';
 import { generateLogId, determineLogLevel } from '../utils/logUtils';
 import { SSE_ENDPOINTS } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const RECONNECT_INTERVAL = 5000;
 const RENDER_BATCH_INTERVAL = parseInt(import.meta.env.VITE_RENDER_BATCH_INTERVAL || '5000', 10);
@@ -55,13 +56,13 @@ interface PendingLog {
 }
 
 export const useGlobalSSE = () => {
+  const { token, isAuthenticated } = useAuth();
   const [state, setState] = useState<GlobalSSEState>({
     logs: [],
     connectionStatus: {},
     isConnecting: {}
   });
 
-  const eventSourcesRef = useRef<Record<string, EventSource | null>>({});
   const reconnectTimeoutsRef = useRef<Record<string, number | null>>({});
   const pendingLogsRef = useRef<PendingLog[]>([]);
   const batchTimeoutRef = useRef<number | null>(null);
@@ -114,13 +115,16 @@ export const useGlobalSSE = () => {
   }, [scheduleBatchUpdate]);
 
   const connectToEndpoint = useCallback((endpoint: string, logType: LogType) => {
-    // 이미 연결되어 있으면 재연결하지 않음
-    if (eventSourcesRef.current[endpoint]) {
-      console.log(`[GlobalSSE] Already connected to ${endpoint}, skipping...`);
+    // 인증되지 않은 경우 연결하지 않음
+    if (!isAuthenticated || !token) {
       return;
     }
 
-    console.log(`[GlobalSSE] Connecting to ${endpoint} for ${logType}`);
+    // 이미 연결 중이면 재연결하지 않음
+    if (state.isConnecting[endpoint]) {
+      return;
+    }
+
     
     setState(prev => ({
       ...prev,
@@ -131,105 +135,109 @@ export const useGlobalSSE = () => {
       }
     }));
 
-    const eventSource = new EventSource(endpoint);
-    eventSourcesRef.current[endpoint] = eventSource;
-
-    eventSource.onopen = () => {
-      console.log(`[GlobalSSE] Connected to ${endpoint} for ${logType}`);
-      setState(prev => ({
-        ...prev,
-        isConnecting: { ...prev.isConnecting, [endpoint]: false },
-        connectionStatus: {
-          ...prev.connectionStatus,
-          [endpoint]: {
-            isConnected: true,
-            lastUpdate: new Date(),
-            error: null
-          }
-        }
-      }));
-    };
-
-    eventSource.onmessage = (event) => {
-      console.log(`[GlobalSSE] Received message from ${endpoint}:`, event.data);
+    // fetch API를 사용하여 헤더에 토큰 포함
+    const connectWithFetch = async () => {
       try {
-        const data = JSON.parse(event.data);
-        console.log(`[GlobalSSE] Parsed data for ${logType}:`, data);
-        addLog(data, logType);
-      } catch (error) {
-        console.error(`[GlobalSSE] Error parsing data from ${endpoint}:`, error);
+        const response = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        if (!response.body) {
+          throw new Error('Response body is null');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        // 연결 성공 상태 업데이트
         setState(prev => ({
           ...prev,
+          isConnecting: { ...prev.isConnecting, [endpoint]: false },
           connectionStatus: {
             ...prev.connectionStatus,
             [endpoint]: {
-              ...prev.connectionStatus[endpoint],
-              error: 'Failed to parse log data'
+              isConnected: true,
+              lastUpdate: new Date(),
+              error: null
+            }
+          }
+        }));
+
+        // 스트림 읽기
+        const readStream = async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              
+              if (done) {
+                break;
+              }
+
+              const chunk = decoder.decode(value, { stream: true });
+              const lines = chunk.split('\n');
+
+              for (const line of lines) {
+                if (line.trim() === '') continue;
+                
+                if (line.startsWith('data: ')) {
+                  const data = line.slice(6);
+                  if (data === '[DONE]') continue;
+                  
+                  try {
+                    const parsedData = JSON.parse(data);
+                    addLog(parsedData, logType);
+                  } catch (parseError) {
+                    // 파싱 에러는 무시하고 계속 진행
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            setState(prev => ({
+              ...prev,
+              connectionStatus: {
+                ...prev.connectionStatus,
+                [endpoint]: {
+                  isConnected: false,
+                  lastUpdate: prev.connectionStatus[endpoint]?.lastUpdate || null,
+                  error: 'Stream reading failed'
+                }
+              }
+            }));
+          }
+        };
+
+        readStream();
+
+      } catch (error) {
+        setState(prev => ({
+          ...prev,
+          isConnecting: { ...prev.isConnecting, [endpoint]: false },
+          connectionStatus: {
+            ...prev.connectionStatus,
+            [endpoint]: {
+              isConnected: false,
+              lastUpdate: prev.connectionStatus[endpoint]?.lastUpdate || null,
+              error: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
             }
           }
         }));
       }
     };
 
-    // Handle custom event types based on endpoint
-    const eventName = getEventNameForEndpoint(endpoint);
-    eventSource.addEventListener(eventName, (event) => {
-      console.log(`[GlobalSSE] Received ${eventName} event from ${endpoint}:`, event.data);
-      try {
-        const data = JSON.parse(event.data);
-        console.log(`[GlobalSSE] Parsed ${eventName} data for ${logType}:`, data);
-        addLog(data, logType);
-      } catch (error) {
-        console.error(`[GlobalSSE] Error parsing ${eventName} data from ${endpoint}:`, error);
-        setState(prev => ({
-          ...prev,
-          connectionStatus: {
-            ...prev.connectionStatus,
-            [endpoint]: {
-              ...prev.connectionStatus[endpoint],
-              error: `Failed to parse ${eventName} data`
-            }
-          }
-        }));
-      }
-    });
-
-    eventSource.onerror = (error) => {
-      console.error(`[GlobalSSE] Connection error for ${endpoint}:`, error);
-      setState(prev => ({
-        ...prev,
-        isConnecting: { ...prev.isConnecting, [endpoint]: false },
-        connectionStatus: {
-          ...prev.connectionStatus,
-          [endpoint]: {
-            isConnected: false,
-            lastUpdate: prev.connectionStatus[endpoint]?.lastUpdate || null,
-            error: 'Connection lost'
-          }
-        }
-      }));
-
-      eventSource.close();
-      eventSourcesRef.current[endpoint] = null;
-      
-      // Auto reconnect
-      if (reconnectTimeoutsRef.current[endpoint]) {
-        clearTimeout(reconnectTimeoutsRef.current[endpoint]!);
-      }
-      
-      reconnectTimeoutsRef.current[endpoint] = setTimeout(() => {
-        console.log(`[GlobalSSE] Attempting to reconnect to ${endpoint}...`);
-        connectToEndpoint(endpoint, logType);
-      }, RECONNECT_INTERVAL);
-    };
-  }, [addLog]);
+    connectWithFetch();
+  }, [addLog, isAuthenticated, token]);
 
   const disconnectFromEndpoint = useCallback((endpoint: string) => {
-    if (eventSourcesRef.current[endpoint]) {
-      eventSourcesRef.current[endpoint]!.close();
-      eventSourcesRef.current[endpoint] = null;
-    }
-    
     if (reconnectTimeoutsRef.current[endpoint]) {
       clearTimeout(reconnectTimeoutsRef.current[endpoint]!);
       reconnectTimeoutsRef.current[endpoint] = null;
@@ -279,8 +287,12 @@ export const useGlobalSSE = () => {
     return pendingLogsRef.current.length;
   }, []);
 
-  // Initialize all connections on mount
+  // Initialize all connections when authenticated
   useEffect(() => {
+    if (!isAuthenticated || !token) {
+      return;
+    }
+
     const endpoints = [
       { url: SSE_ENDPOINTS.STREAM, type: LogType.GENERAL },
       { url: SSE_ENDPOINTS.AUTH, type: LogType.AUTH_SUCCESS },
@@ -294,7 +306,7 @@ export const useGlobalSSE = () => {
 
     // Cleanup on unmount
     return () => {
-      Object.keys(eventSourcesRef.current).forEach(endpoint => {
+      Object.keys(state.connectionStatus).forEach(endpoint => {
         disconnectFromEndpoint(endpoint);
       });
       
@@ -304,7 +316,7 @@ export const useGlobalSSE = () => {
         batchTimeoutRef.current = null;
       }
     };
-  }, [connectToEndpoint, disconnectFromEndpoint]);
+  }, [isAuthenticated, token, connectToEndpoint]);
 
   return {
     allLogs: state.logs,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Wifi, WifiOff, Moon, Sun, Shield } from 'lucide-react';
+import { Clock, Wifi, WifiOff, Moon, Sun, Shield, LogOut, User } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { buildApiUrl, API_CONFIG } from '../../config/api';
 
 interface ApiStatus {
@@ -12,6 +13,7 @@ interface ApiStatus {
 
 export const Header: React.FC = () => {
   const { isDark, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [apiStatus, setApiStatus] = useState<ApiStatus>({
     stream: false,
@@ -105,6 +107,24 @@ export const Header: React.FC = () => {
                 </div>
               ))}
             </div>
+
+            {/* User Info and Logout */}
+            {user && (
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-300">
+                  <User className="h-4 w-4" />
+                  <span>{user.username}</span>
+                </div>
+                <button
+                  onClick={logout}
+                  className="flex items-center space-x-1 px-3 py-1 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                  aria-label="로그아웃"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>로그아웃</span>
+                </button>
+              </div>
+            )}
 
             {/* Theme Toggle */}
             <button

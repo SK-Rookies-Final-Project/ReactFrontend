@@ -67,11 +67,14 @@ export const StreamPage: React.FC = () => {
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
         <h3 className="text-sm font-semibold text-yellow-900 dark:text-yellow-100 mb-2">연결 상태 및 로그 분류 디버그</h3>
         <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
-          <p>Stream: {getConnectionStatus(SSE_ENDPOINTS.STREAM).isConnected ? '연결됨' : '연결 안됨'}</p>
-          <p>Auth: {getConnectionStatus(SSE_ENDPOINTS.AUTH).isConnected ? '연결됨' : '연결 안됨'}</p>
-          <p>Auth Failed: {getConnectionStatus(SSE_ENDPOINTS.AUTH_FAILED).isConnected ? '연결됨' : '연결 안됨'}</p>
-          <p>Unauth: {getConnectionStatus(SSE_ENDPOINTS.UNAUTH).isConnected ? '연결됨' : '연결 안됨'}</p>
+          <p>Stream: {getConnectionStatus(SSE_ENDPOINTS.STREAM).isConnected ? '연결됨' : '연결 안됨'} {getConnectionStatus(SSE_ENDPOINTS.STREAM).error && `(${getConnectionStatus(SSE_ENDPOINTS.STREAM).error})`}</p>
+          <p>Auth: {getConnectionStatus(SSE_ENDPOINTS.AUTH).isConnected ? '연결됨' : '연결 안됨'} {getConnectionStatus(SSE_ENDPOINTS.AUTH).error && `(${getConnectionStatus(SSE_ENDPOINTS.AUTH).error})`}</p>
+          <p>Auth Failed: {getConnectionStatus(SSE_ENDPOINTS.AUTH_FAILED).isConnected ? '연결됨' : '연결 안됨'} {getConnectionStatus(SSE_ENDPOINTS.AUTH_FAILED).error && `(${getConnectionStatus(SSE_ENDPOINTS.AUTH_FAILED).error})`}</p>
+          <p>Unauth: {getConnectionStatus(SSE_ENDPOINTS.UNAUTH).isConnected ? '연결됨' : '연결 안됨'} {getConnectionStatus(SSE_ENDPOINTS.UNAUTH).error && `(${getConnectionStatus(SSE_ENDPOINTS.UNAUTH).error})`}</p>
+          <p>Stream URL: {SSE_ENDPOINTS.STREAM}</p>
           <p>Auth URL: {SSE_ENDPOINTS.AUTH}</p>
+          <p>Auth Failed URL: {SSE_ENDPOINTS.AUTH_FAILED}</p>
+          <p>Unauth URL: {SSE_ENDPOINTS.UNAUTH}</p>
           <div className="mt-2 pt-2 border-t border-yellow-300 dark:border-yellow-700">
             <p>분류된 로그 수:</p>
             <p>- 인증 성공: {getLogsByType(LogType.AUTH_SUCCESS).length}개</p>
