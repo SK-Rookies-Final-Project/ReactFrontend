@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Activity, Shield, ShieldAlert, ShieldX, Database } from 'lucide-react';
+import { Activity, Shield, ShieldAlert, ShieldX, Database, BarChart3 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface NavItem {
@@ -34,6 +34,12 @@ const navItems: NavItem[] = [
     label: '인가 실패',
     icon: <ShieldAlert className="h-5 w-5" />,
     description: '권한 부족 로그'
+  },
+  {
+    path: '/prometheus',
+    label: '프로메테우스',
+    icon: <BarChart3 className="h-5 w-5" />,
+    description: 'Kafka 모니터링 대시보드'
   }
 ];
 
@@ -41,8 +47,13 @@ export const Navigation: React.FC = () => {
   const location = useLocation();
   const { isAuthenticated } = useAuth();
 
-  // 인증되지 않은 경우 네비게이션을 숨김
-  if (!isAuthenticated) {
+  // 프로메테우스 페이지는 로그인 없이도 접근 가능
+  const publicItems = navItems.filter(item => item.path === '/prometheus');
+  const protectedItems = navItems.filter(item => item.path !== '/prometheus');
+  const displayItems = isAuthenticated ? navItems : publicItems;
+
+  // 프로메테우스 페이지가 아닌 경우에만 인증 체크
+  if (!isAuthenticated && !location.pathname.startsWith('/prometheus')) {
     return null;
   }
 
@@ -50,7 +61,7 @@ export const Navigation: React.FC = () => {
     <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex space-x-8 overflow-x-auto">
-          {navItems.map((item) => {
+          {displayItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <Link

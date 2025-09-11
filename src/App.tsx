@@ -11,6 +11,7 @@ import { StreamPage } from './pages/StreamPage';
 import { AuthSuccessPage } from './pages/AuthSuccessPage';
 import { AuthFailedPage } from './pages/AuthFailedPage';
 import { UnauthorizedPage } from './pages/UnauthorizedPage';
+import PrometheusPage from './pages/PrometheusPage';
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
                       <StreamPage />
                     </ProtectedRoute>
                   } />
+                  <Route path="/prometheus" element={<PrometheusPage />} />
                   <Route path="/auth" element={
                     <ProtectedRoute>
                       <AuthSuccessPage />
