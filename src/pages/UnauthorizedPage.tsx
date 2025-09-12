@@ -20,8 +20,8 @@ export const UnauthorizedPage: React.FC = () => {
   } = useSSEContext();
 
   const logs = getLogsByType(LogType.UNAUTHORIZED);
-  const connectionStatus = getConnectionStatus(SSE_ENDPOINTS.UNAUTH);
-  const isConnectingUnauth = isConnecting(SSE_ENDPOINTS.UNAUTH);
+  const connectionStatus = getConnectionStatus(SSE_ENDPOINTS.AUTH_RESOURCE);
+  const isConnectingUnauth = isConnecting(SSE_ENDPOINTS.AUTH_RESOURCE);
 
   const {
     filters,
@@ -36,10 +36,10 @@ export const UnauthorizedPage: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            인가 실패 로그
+            유저/리소스 레벨 비인가 접근 감지
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            권한 부족 이벤트 모니터링
+            유저/리소스 권한 부족으로 인한 비인가 접근 시도 모니터링
           </p>
         </div>
         <button
@@ -54,7 +54,7 @@ export const UnauthorizedPage: React.FC = () => {
       <ConnectionStatus
         status={connectionStatus}
         isConnecting={isConnectingUnauth}
-        endpoint={SSE_ENDPOINTS.UNAUTH}
+        endpoint={SSE_ENDPOINTS.AUTH_RESOURCE}
         onConnect={() => {}} // 연결은 전역에서 관리
         onDisconnect={() => {}} // 연결은 전역에서 관리
       />

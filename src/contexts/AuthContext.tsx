@@ -46,41 +46,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (username: string, password: string): Promise<void> => {
-    try {
-      const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
+    const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
+    });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `로그인 실패: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      if (!data.token) {
-        throw new Error('서버에서 토큰을 받지 못했습니다.');
-      }
-
-      const userData: User = {
-        id: data.user?.id || data.userId || username,
-        username: data.user?.username || username,
-        email: data.user?.email,
-      };
-
-      // 토큰과 사용자 정보를 저장
-      setToken(data.token);
-      setUser(userData);
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('auth_user', JSON.stringify(userData));
-      
-    } catch (error) {
-      throw error;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `로그인 실패: ${response.status}`);
     }
+
+    const data = await response.json();
+    
+    if (!data.token) {
+      throw new Error('서버에서 토큰을 받지 못했습니다.');
+    }
+
+    const userData: User = {
+      id: data.user?.id || data.userId || username,
+      username: data.user?.username || username,
+      email: data.user?.email,
+    };
+
+    // 토큰과 사용자 정보를 저장
+    setToken(data.token);
+    setUser(userData);
+    localStorage.setItem('auth_token', data.token);
+    localStorage.setItem('auth_user', JSON.stringify(userData));
   };
 
   const logout = () => {

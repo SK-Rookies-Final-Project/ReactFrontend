@@ -6,22 +6,16 @@ import { AuthStatisticsCards } from '../components/dashboard/AuthStatisticsCards
 import { LogChart } from '../components/dashboard/LogChart';
 import { LogFilter } from '../components/dashboard/LogFilter';
 import { LogList } from '../components/dashboard/LogList';
-import { ConnectionStatus } from '../components/dashboard/ConnectionStatus';
 import { BatchProcessingInfo } from '../components/dashboard/BatchProcessingInfo';
-import { SSE_ENDPOINTS } from '../config/api';
 
 export const AuthFailedPage: React.FC = () => {
   const { 
     getLogsByType, 
-    getConnectionStatus, 
-    isConnecting, 
     clearLogs,
     getPendingLogsCount
   } = useSSEContext();
 
   const logs = getLogsByType(LogType.AUTH_FAILED);
-  const connectionStatus = getConnectionStatus(SSE_ENDPOINTS.AUTH_FAILED);
-  const isConnectingAuthFailed = isConnecting(SSE_ENDPOINTS.AUTH_FAILED);
 
   const {
     filters,
@@ -36,10 +30,10 @@ export const AuthFailedPage: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            로그인 실패 로그
+            로그인 연속 실패 감지
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            인증 실패 이벤트 모니터링
+            비밀번호 연속 실패로 인한 로그인 실패 모니터링
           </p>
         </div>
         <button
@@ -50,14 +44,6 @@ export const AuthFailedPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Connection Status */}
-      <ConnectionStatus
-        status={connectionStatus}
-        isConnecting={isConnectingAuthFailed}
-        endpoint={SSE_ENDPOINTS.AUTH_FAILED}
-        onConnect={() => {}} // 연결은 전역에서 관리
-        onDisconnect={() => {}} // 연결은 전역에서 관리
-      />
 
       {/* Batch Processing Info */}
       <BatchProcessingInfo pendingLogsCount={getPendingLogsCount()} />

@@ -1,26 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Wifi, WifiOff, Moon, Sun, Shield, LogOut, User } from 'lucide-react';
+import { Clock, Moon, Sun, Shield, LogOut, User } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { buildApiUrl, API_CONFIG } from '../../config/api';
 
-interface ApiStatus {
-  stream: boolean;
-  auth: boolean;
-  unauth: boolean;
-  auth_failed: boolean;
-}
 
 export const Header: React.FC = () => {
   const { isDark, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [apiStatus, setApiStatus] = useState<ApiStatus>({
-    stream: false,
-    auth: false,
-    unauth: false,
-    auth_failed: false
-  });
 
   // Update clock every second
   useEffect(() => {
@@ -31,28 +18,6 @@ export const Header: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Check API endpoints on mount
-  useEffect(() => {
-    const checkEndpoint = async (endpoint: string, key: keyof ApiStatus) => {
-      try {
-        const response = await fetch(buildApiUrl(`/api/kafka/${endpoint}`), {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        setApiStatus(prev => ({ ...prev, [key]: response.ok }));
-      } catch (error) {
-        console.warn(`API endpoint ${endpoint} check failed:`, error);
-        setApiStatus(prev => ({ ...prev, [key]: false }));
-      }
-    };
-
-    checkEndpoint('stream', 'stream');
-    checkEndpoint('auth', 'auth');
-    checkEndpoint('unauth', 'unauth');
-    checkEndpoint('auth_failed', 'auth_failed');
-  }, []);
 
   const formatTime = (date: Date) => {
     return date.toLocaleString('ko-KR', {
@@ -75,7 +40,7 @@ export const Header: React.FC = () => {
             <Shield className="h-8 w-8 text-blue-600 dark:text-blue-400" />
             <div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                Kafka 감사 로그 모니터링
+                실시간 감사 로그 모니터링
               </h1>
               <p className="text-xs text-gray-600 dark:text-gray-300">
                 실시간 보안 이벤트 대시보드
@@ -91,22 +56,6 @@ export const Header: React.FC = () => {
               <span className="font-mono">{formatTime(currentTime)}</span>
             </div>
 
-            {/* API Status */}
-            <div className="flex items-center space-x-3">
-              <span className="text-xs text-gray-500 dark:text-gray-400">API 상태:</span>
-              {Object.entries(apiStatus).map(([key, status]) => (
-                <div key={key} className="flex items-center space-x-1">
-                  {status ? (
-                    <Wifi className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <WifiOff className="h-4 w-4 text-red-500" />
-                  )}
-                  <span className="text-xs text-gray-600 dark:text-gray-300">
-                    {key}
-                  </span>
-                </div>
-              ))}
-            </div>
 
             {/* User Info and Logout */}
             {user && (

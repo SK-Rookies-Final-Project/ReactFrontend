@@ -4,44 +4,7 @@ import { generateLogId, determineLogLevel } from '../utils/logUtils';
 import { SSE_ENDPOINTS } from '../config/api';
 import { useAuth } from '../contexts/AuthContext';
 
-const RECONNECT_INTERVAL = 5000;
 const RENDER_BATCH_INTERVAL = parseInt(import.meta.env.VITE_RENDER_BATCH_INTERVAL || '5000', 10);
-
-// 로그 타입을 분류하는 함수
-const classifyLogType = (data: any): LogType => {
-  // Kafka 감사 로그 분석
-  if (data.type === 'io.confluent.kafka.server/authorization') {
-    const authInfo = data.data?.authenticationInfo;
-    const authzInfo = data.data?.authorizationInfo;
-    
-    // 인증 성공 (granted: true)
-    if (authzInfo?.granted === true) {
-      return LogType.AUTH_SUCCESS;
-    }
-    
-    // 인증 실패 (granted: false)
-    if (authzInfo?.granted === false) {
-      return LogType.AUTH_FAILED;
-    }
-    
-    // 권한 부족 (인증은 되었지만 권한이 없음)
-    if (authInfo?.principal && authzInfo?.granted === false) {
-      return LogType.UNAUTHORIZED;
-    }
-  }
-  
-  // 기본적으로 일반 로그로 분류
-  return LogType.GENERAL;
-};
-
-// 엔드포인트별 이벤트 이름 반환
-const getEventNameForEndpoint = (endpoint: string): string => {
-  if (endpoint.includes('/stream')) return 'streams';
-  if (endpoint.includes('/auth') && !endpoint.includes('_failed') && !endpoint.includes('unauth')) return 'auth';
-  if (endpoint.includes('/auth_failed')) return 'auth_failed';
-  if (endpoint.includes('/unauth')) return 'unauth';
-  return 'streams'; // 기본값
-};
 
 interface GlobalSSEState {
   logs: LogWithMetadata[];
@@ -195,13 +158,13 @@ export const useGlobalSSE = () => {
                   try {
                     const parsedData = JSON.parse(data);
                     addLog(parsedData, logType);
-                  } catch (parseError) {
+                  } catch {
                     // 파싱 에러는 무시하고 계속 진행
                   }
                 }
               }
             }
-          } catch (error) {
+          } catch {
             setState(prev => ({
               ...prev,
               connectionStatus: {
@@ -235,7 +198,7 @@ export const useGlobalSSE = () => {
     };
 
     connectWithFetch();
-  }, [addLog, isAuthenticated, token]);
+  }, [addLog, isAuthenticated, token, state.isConnecting]);
 
   const disconnectFromEndpoint = useCallback((endpoint: string) => {
     if (reconnectTimeoutsRef.current[endpoint]) {
@@ -294,10 +257,10 @@ export const useGlobalSSE = () => {
     }
 
     const endpoints = [
-      { url: SSE_ENDPOINTS.STREAM, type: LogType.GENERAL },
-      { url: SSE_ENDPOINTS.AUTH, type: LogType.AUTH_SUCCESS },
-      { url: SSE_ENDPOINTS.AUTH_FAILED, type: LogType.AUTH_FAILED },
-      { url: SSE_ENDPOINTS.UNAUTH, type: LogType.UNAUTHORIZED }
+      { url: SSE_ENDPOINTS.AUTH_SYSTEM, type: LogType.GENERAL },
+      { url: SSE_ENDPOINTS.AUTH_SUSPICIOUS, type: LogType.AUTH_SUCCESS },
+      { url: SSE_ENDPOINTS.AUTH_FAILURE, type: LogType.AUTH_FAILED },
+      { url: SSE_ENDPOINTS.AUTH_RESOURCE, type: LogType.UNAUTHORIZED }
     ];
 
     endpoints.forEach(({ url, type }) => {
@@ -316,7 +279,7 @@ export const useGlobalSSE = () => {
         batchTimeoutRef.current = null;
       }
     };
-  }, [isAuthenticated, token, connectToEndpoint]);
+  }, [isAuthenticated, token, connectToEndpoint, disconnectFromEndpoint, state.connectionStatus]);
 
   return {
     allLogs: state.logs,

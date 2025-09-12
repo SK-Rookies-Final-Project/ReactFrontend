@@ -1,4 +1,4 @@
-import { LogEntry, LogType, LogLevel, AuthLog, UnauthorizedLog, KafkaAuditLog } from '../types/kafka';
+import { LogEntry, LogType, LogLevel, AuthLog, UnauthorizedLog, KafkaAuditLog, LogWithMetadata } from '../types/kafka';
 
 export const generateLogId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -39,7 +39,7 @@ export const formatTimestamp = (timestamp: Date): string => {
   return timestamp.toLocaleString();
 };
 
-export const extractUserInfo = (log: LogEntry): string => {
+export const extractUserInfo = (log: LogEntry | LogWithMetadata): string => {
   if ('user' in log) return log.user;
   if ('principal' in log) return log.principal;
   if ('data' in log && log.data?.authenticationInfo?.principal) {
@@ -48,7 +48,7 @@ export const extractUserInfo = (log: LogEntry): string => {
   return 'Unknown';
 };
 
-export const extractIpAddress = (log: LogEntry): string => {
+export const extractIpAddress = (log: LogEntry | LogWithMetadata): string => {
   if ('remote_addr' in log) return log.remote_addr;
   if ('clientIp' in log) return log.clientIp;
   if ('data' in log && log.data?.clientAddress?.[0]?.ip) {

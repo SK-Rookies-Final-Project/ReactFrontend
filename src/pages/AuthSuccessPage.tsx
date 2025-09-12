@@ -6,22 +6,16 @@ import { AuthStatisticsCards } from '../components/dashboard/AuthStatisticsCards
 import { LogChart } from '../components/dashboard/LogChart';
 import { LogFilter } from '../components/dashboard/LogFilter';
 import { LogList } from '../components/dashboard/LogList';
-import { ConnectionStatus } from '../components/dashboard/ConnectionStatus';
 import { BatchProcessingInfo } from '../components/dashboard/BatchProcessingInfo';
-import { SSE_ENDPOINTS } from '../config/api';
 
 export const AuthSuccessPage: React.FC = () => {
   const { 
     getLogsByType, 
-    getConnectionStatus, 
-    isConnecting, 
     clearLogs,
     getPendingLogsCount
   } = useSSEContext();
 
   const logs = getLogsByType(LogType.AUTH_SUCCESS);
-  const connectionStatus = getConnectionStatus(SSE_ENDPOINTS.AUTH);
-  const isConnectingAuth = isConnecting(SSE_ENDPOINTS.AUTH);
 
   const {
     filters,
@@ -36,10 +30,10 @@ export const AuthSuccessPage: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            로그인 성공 로그
+            의심스러운 로그인 시도 감지
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            인증 성공 이벤트 모니터링
+            의심스러운 로그인 시도 행위 모니터링
           </p>
         </div>
         <button
@@ -50,14 +44,6 @@ export const AuthSuccessPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Connection Status */}
-      <ConnectionStatus
-        status={connectionStatus}
-        isConnecting={isConnectingAuth}
-        endpoint={SSE_ENDPOINTS.AUTH}
-        onConnect={() => {}} // 연결은 전역에서 관리
-        onDisconnect={() => {}} // 연결은 전역에서 관리
-      />
 
       {/* Batch Processing Info */}
       <BatchProcessingInfo pendingLogsCount={getPendingLogsCount()} />
