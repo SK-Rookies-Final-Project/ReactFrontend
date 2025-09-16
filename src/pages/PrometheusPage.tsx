@@ -1,6 +1,9 @@
 import { promQuery, PROM_BASE } from '../lib/prom'
 import { usePoll } from '../hooks/usePoll'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import { ArrowLeft, Activity, Server, Database } from 'lucide-react'
 
 // 한 번만(마운트 시) 실행해서 데이터 가져오는 훅
 function useOnce<T = any[]>(fn: (signal?: AbortSignal) => Promise<T>) {
@@ -78,6 +81,13 @@ const unionInstances = (...maps: Map<string, number>[]) => {
 }
 
 export default function PrometheusPage() {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
   // ===== 1) Component/Process up/health =====
   // Prometheus 'up' by job/instance
   const upAll = usePoll((signal) =>
@@ -222,17 +232,58 @@ const topicBytesOut = usePoll((signal) =>
   BROKER_POLL_MS
 )
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Kafka Infra • Core Ops (Prometheus)</h1>
-        <div className="text-gray-600 dark:text-gray-400 text-sm mt-2">Prometheus: {PROM_BASE}</div>
-        <div className="text-blue-600 dark:text-blue-400 text-sm mt-1">
-          last scrape: {ageSec(Math.max(
-            tsOf(upAll.data), tsOf(cpu.data), tsOf(urp.data), tsOf(bytesIn.data)
-          ))}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-4">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                <ArrowLeft className="h-5 w-5 mr-2" />
+                대시보드로 돌아가기
+              </button>
+              <div className="h-6 w-px bg-gray-300 dark:bg-gray-600"></div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Kafka 시스템 모니터링 (Prometheus)
+              </h1>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors duration-200"
+            >
+              로그아웃
+            </button>
+          </div>
         </div>
-        {upAll.error && <div className="text-red-600 text-sm mt-2">Error: {upAll.error.message}</div>}
       </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Status Banner */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Prometheus 연결 상태
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                서버: {PROM_BASE}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-blue-600 dark:text-blue-400">
+                마지막 업데이트: {ageSec(Math.max(
+                  tsOf(upAll.data), tsOf(cpu.data), tsOf(urp.data), tsOf(bytesIn.data)
+                ))}
+              </div>
+              {upAll.error && (
+                <div className="text-red-600 text-sm mt-1">오류: {upAll.error.message}</div>
+              )}
+            </div>
+          </div>
+        </div>
 
       {/* Section: Process/Component status */}
       <section className="mb-8">
@@ -499,7 +550,8 @@ const topicBytesOut = usePoll((signal) =>
             </div>
           )
         })()}
-      </section>
+        </section>
+      </div>
     </div>
   )
 }

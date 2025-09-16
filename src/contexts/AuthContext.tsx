@@ -1,11 +1,7 @@
 import React, { createContext, useContext, ReactNode, useState, useEffect } from 'react';
 import { API_CONFIG } from '../config/api';
-
-interface User {
-  id: string;
-  username: string;
-  email?: string;
-}
+import { User } from '../types';
+import { checkNetworkStatus, getErrorMessage } from '../utils/networkUtils';
 
 interface AuthContextType {
   user: User | null;
@@ -27,7 +23,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 토큰이 있는지 확인하고 사용자 정보 복원
   useEffect(() => {
     const storedToken = localStorage.getItem('auth_token');
     const storedUser = localStorage.getItem('auth_user');
@@ -36,7 +31,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
-      } catch (error) {
+      } catch {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
       }
@@ -46,36 +41,56 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (username: string, password: string): Promise<void> => {
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, password }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `로그인 실패: ${response.status}`);
+    // 네트워크 상태 확인
+    if (!checkNetworkStatus()) {
+      throw new Error('인터넷 연결을 확인해주세요.');
     }
 
-    const data = await response.json();
-    
-    if (!data.token) {
-      throw new Error('서버에서 토큰을 받지 못했습니다.');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10초 타임아웃
+
+    try {
+      console.log('로그인 시도 중...', { username, baseUrl: API_CONFIG.BASE_URL });
+      
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGIN}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `로그인 실패: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.token) {
+        throw new Error('서버에서 토큰을 받지 못했습니다.');
+      }
+
+      const userData: User = {
+        id: data.user?.id || data.userId || username,
+        username: data.user?.username || username,
+        email: data.user?.email,
+      };
+
+      setToken(data.token);
+      setUser(userData);
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      
+      console.log('로그인 성공');
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error('로그인 오류:', error);
+      throw new Error(getErrorMessage(error));
     }
-
-    const userData: User = {
-      id: data.user?.id || data.userId || username,
-      username: data.user?.username || username,
-      email: data.user?.email,
-    };
-
-    // 토큰과 사용자 정보를 저장
-    setToken(data.token);
-    setUser(userData);
-    localStorage.setItem('auth_token', data.token);
-    localStorage.setItem('auth_user', JSON.stringify(userData));
   };
 
   const logout = () => {
