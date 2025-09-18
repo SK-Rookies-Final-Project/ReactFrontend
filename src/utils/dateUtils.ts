@@ -83,3 +83,61 @@ export const isValidBackendDateTime = (dateTimeString: string): boolean => {
   const backendDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
   return backendDateTimeRegex.test(dateTimeString);
 };
+
+/**
+ * 백엔드에서 받은 시간 문자열을 사용자 친화적인 한국 시간 형식으로 변환
+ * @param backendTimeString 백엔드에서 받은 시간 문자열 (UTC 기준)
+ * @returns 한국 시간 형식의 문자열 (예: "2025. 08. 19. 오후 05:03:25")
+ */
+export const formatBackendTimeToDisplay = (backendTimeString: string): string => {
+  if (!backendTimeString) return '';
+  
+  try {
+    // UTC 시간을 Date 객체로 파싱
+    const utcDate = new Date(backendTimeString);
+    
+    // 한국 시간으로 변환하여 표시
+    return utcDate.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Seoul'
+    });
+  } catch (error) {
+    console.error('시간 변환 오류:', error);
+    return backendTimeString; // 변환 실패 시 원본 반환
+  }
+};
+
+/**
+ * 백엔드에서 받은 시간 문자열을 간단한 한국 시간 형식으로 변환
+ * @param backendTimeString 백엔드에서 받은 시간 문자열 (UTC 기준)
+ * @returns 간단한 한국 시간 형식의 문자열 (예: "2025-08-19 17:03:25")
+ */
+export const formatBackendTimeToSimple = (backendTimeString: string): string => {
+  if (!backendTimeString) return '';
+  
+  try {
+    // UTC 시간을 Date 객체로 파싱
+    const utcDate = new Date(backendTimeString);
+    
+    // 한국 시간으로 변환
+    const koreanDate = new Date(utcDate.getTime() + (9 * 60 * 60 * 1000));
+    
+    const year = koreanDate.getUTCFullYear();
+    const month = String(koreanDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(koreanDate.getUTCDate()).padStart(2, '0');
+    const hours = String(koreanDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(koreanDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(koreanDate.getUTCSeconds()).padStart(2, '0');
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  } catch (error) {
+    console.error('시간 변환 오류:', error);
+    return backendTimeString; // 변환 실패 시 원본 반환
+  }
+};
