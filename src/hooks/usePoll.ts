@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 export function usePoll<T>(fn: (signal?: AbortSignal) => Promise<T>, intervalMs: number) {
   const [data, setData] = useState<T | undefined>()
+  const [error, setError] = useState<Error | null>(null)
   const timer = useRef<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -12,9 +13,15 @@ export function usePoll<T>(fn: (signal?: AbortSignal) => Promise<T>, intervalMs:
       abortRef.current = ac
       try {
         const res = await fn(ac.signal)
-        setData(res as any)
-      } catch (_) {
-        /* swallow; 화면에선 이전 값 유지 */
+        setData(res as T)
+        setError(null)
+      } catch (err) {
+        // AbortError는 무시 (정상적인 취소)
+        if (err instanceof Error && err.name === 'AbortError') {
+          return
+        }
+        setError(err instanceof Error ? err : new Error(String(err)))
+        /* 화면에선 이전 값 유지 */
       } finally {
         timer.current = window.setTimeout(tick, intervalMs)
       }
@@ -26,5 +33,5 @@ export function usePoll<T>(fn: (signal?: AbortSignal) => Promise<T>, intervalMs:
     }
   }, [fn, intervalMs])
 
-  return { data }
+  return { data, error }
 }
