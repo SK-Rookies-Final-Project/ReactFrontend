@@ -64,10 +64,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
-    // 네트워크 상태 확인
-    if (!checkNetworkStatus()) {
-      throw new Error('인터넷 연결을 확인해주세요.');
-    }
+    // 로컬 개발 환경에서는 네트워크 상태 체크를 건너뜀
+    // 실제 서버 연결은 fetch 요청에서 자체적으로 처리됨
 
     try {
       console.log('로그인 시도 중...', { username, baseUrl: API_CONFIG.BASE_URL });
