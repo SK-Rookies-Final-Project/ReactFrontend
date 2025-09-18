@@ -27,7 +27,7 @@ function App() {
               <Route path="/audit" element={
                 <ProtectedRoute>
                   <AuditPage />
-                </ProtectedRoute>
+                </ProtectedRoute> 
               } />
               <Route path="/history" element={
                 <ProtectedRoute>
@@ -37,7 +37,7 @@ function App() {
               <Route path="/prometheus" element={
                 <ProtectedRoute>
                   <PrometheusPage />
-                </ProtectedRoute>
+                </ProtectedRoute> 
               } />
               <Route path="/settings" element={
                 <ProtectedRoute>
