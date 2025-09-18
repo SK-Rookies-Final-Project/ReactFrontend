@@ -6,6 +6,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AuditPage } from './pages/AuditPage';
+import { HistoryDashboard } from './pages/HistoryDashboard';
 import { SettingsPage } from './pages/SettingsPage';
 import PrometheusPage from './pages/PrometheusPage';
 
@@ -26,6 +27,11 @@ function App() {
               <Route path="/audit" element={
                 <ProtectedRoute>
                   <AuditPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/history" element={
+                <ProtectedRoute>
+                  <HistoryDashboard />
                 </ProtectedRoute>
               } />
               <Route path="/prometheus" element={

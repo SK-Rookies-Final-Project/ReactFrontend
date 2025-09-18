@@ -1,8 +1,8 @@
 // system-level-false
 export interface AuthSystemEvent {
   id: string;
-  event_time_kst: number;
-  processing_time_kst: number;
+  event_time_kst: string; // KST 형식 문자열
+  processing_time_kst: string; // KST 형식 문자열
   principal: string;
   client_ip: string;
   method_name: string;
@@ -15,8 +15,8 @@ export interface AuthSystemEvent {
 // resource-level-false
 export interface AuthResourceEvent {
   id: string;
-  event_time_kst: number;
-  processing_time_kst: number;
+  event_time_kst: string; // KST 형식 문자열
+  processing_time_kst: string; // KST 형식 문자열
   principal: string;
   client_ip: string;
   method_name: string;
@@ -46,6 +46,18 @@ export interface AuthSuspiciousEvent {
   failure_count: number;
 }
 
+// 표준화된 SSE 이벤트 형식 (백엔드에서 전달하는 형식)
+export interface StandardSSEEvent {
+  eventType: string;
+  timestamp: string;
+  data: {
+    rawMessage: string;
+    topicType: string;
+    serverTime: number;
+  };
+}
+
+// 기존 이벤트 타입들 (rawMessage에서 파싱된 데이터)
 export type AuditEvent = AuthSystemEvent | AuthResourceEvent | AuthFailureEvent | AuthSuspiciousEvent;
 
 // 차트 데이터 타입
