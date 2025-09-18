@@ -1,20 +1,32 @@
-import React, { createContext, useContext, ReactNode, useState, useEffect, useCallback, useRef } from 'react';
-import { API_CONFIG } from '../config/api';
-import { AuditEvent, ChartData } from '../types';
+import React, { createContext, useContext, ReactNode, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import { API_CONFIG } from '../config/api';
+import { 
+  AuthSystemEvent, 
+  AuthResourceEvent, 
+  AuthFailureEvent, 
+  AuthSuspiciousEvent, 
+  StandardSSEEvent,
+  ChartDataPoint 
+} from '../types';
 
 interface SSEContextType {
   isConnected: boolean;
   data: {
-    authSystem: AuditEvent[];
-    authResource: AuditEvent[];
-    authFailure: AuditEvent[];
-    authSuspicious: AuditEvent[];
+    authSystem: AuthSystemEvent[];
+    authResource: AuthResourceEvent[];
+    authFailure: AuthFailureEvent[];
+    authSuspicious: AuthSuspiciousEvent[];
   };
-  chartData: ChartData;
+  chartData: {
+    authSystem: ChartDataPoint[];
+    authResource: ChartDataPoint[];
+    authFailure: ChartDataPoint[];
+    authSuspicious: ChartDataPoint[];
+  };
   connect: () => void;
-  disconnect: () => void;
-  clearData: () => void;
+  forceDisconnect: () => void;
+  generateDummyData: () => void;
 }
 
 const SSEContext = createContext<SSEContextType | undefined>(undefined);
@@ -24,343 +36,439 @@ interface SSEProviderProps {
 }
 
 export const SSEProvider: React.FC<SSEProviderProps> = ({ children }) => {
-  const { token } = useAuth();
+  const { token, isAuthenticated } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
-  const [abortControllers, setAbortControllers] = useState<AbortController[]>([]);
-  // 재시도 로직 제거
   const [data, setData] = useState({
-    authSystem: [] as AuditEvent[],
-    authResource: [] as AuditEvent[],
-    authFailure: [] as AuditEvent[],
-    authSuspicious: [] as AuditEvent[]
+    authSystem: [] as AuthSystemEvent[],
+    authResource: [] as AuthResourceEvent[],
+    authFailure: [] as AuthFailureEvent[],
+    authSuspicious: [] as AuthSuspiciousEvent[]
   });
-  const [chartData, setChartData] = useState<ChartData>({
-    authSystem: [],
-    authResource: [],
-    authFailure: [],
-    authSuspicious: []
+  const [chartData, setChartData] = useState({
+    authSystem: [] as ChartDataPoint[],
+    authResource: [] as ChartDataPoint[],
+    authFailure: [] as ChartDataPoint[],
+    authSuspicious: [] as ChartDataPoint[]
   });
-  
-  // 5초 간격으로 데이터를 배치 처리하기 위한 버퍼
-  const [dataBuffer, setDataBuffer] = useState<{
-    authSystem: AuditEvent[];
-    authResource: AuditEvent[];
-    authFailure: AuditEvent[];
-    authSuspicious: AuditEvent[];
+
+  // 배치 업데이트를 위한 임시 데이터 저장소
+  const batchDataRef = useRef({
+    authSystem: [] as AuthSystemEvent[],
+    authResource: [] as AuthResourceEvent[],
+    authFailure: [] as AuthFailureEvent[],
+    authSuspicious: [] as AuthSuspiciousEvent[]
+  });
+
+  // SSE 연결 참조 (AbortController)
+  const connectionsRef = useRef<{
+    authSystem: AbortController | null;
+    authResource: AbortController | null;
+    authFailure: AbortController | null;
+    authSuspicious: AbortController | null;
   }>({
-    authSystem: [],
-    authResource: [],
-    authFailure: [],
-    authSuspicious: []
+    authSystem: null,
+    authResource: null,
+    authFailure: null,
+    authSuspicious: null
   });
 
-  const updateChartDataRef = useRef<(endpoint: string) => void>();
-  const isConnectingRef = useRef(false);
-  const isConnectedRef = useRef(false);
+  // 5초 주기 배치 업데이트 타이머
+  const batchUpdateTimerRef = useRef<number | null>(null);
 
-  const updateChartData = useCallback((endpoint: string) => {
+  // 이벤트 파싱 함수
+  const parseSSEEvent = (eventType: string, rawMessage: string): AuthSystemEvent | AuthResourceEvent | AuthFailureEvent | AuthSuspiciousEvent | null => {
+    try {
+      const parsed = JSON.parse(rawMessage);
+      
+      switch (eventType) {
+        case 'auth_system':
+          return parsed as AuthSystemEvent;
+        case 'auth_resource':
+          return parsed as AuthResourceEvent;
+        case 'auth_failure':
+          return parsed as AuthFailureEvent;
+        case 'auth_suspicious':
+          return parsed as AuthSuspiciousEvent;
+        default:
+          console.warn('알 수 없는 이벤트 타입:', eventType);
+          return null;
+      }
+    } catch (error) {
+      console.error('SSE 이벤트 파싱 오류:', error, rawMessage);
+      return null;
+    }
+  };
+
+  // 차트 데이터 업데이트 함수
+  const updateChartData = useCallback((eventType: string) => {
     const now = new Date();
-    const timeString = now.toLocaleTimeString('ko-KR', { 
+    const timeKey = now.toLocaleTimeString('ko-KR', { 
       hour: '2-digit', 
       minute: '2-digit' 
     });
-    
+    const timestamp = now.getTime();
+
     setChartData(prev => {
-      const currentData = [...prev[endpoint]];
+      const newChartData = { ...prev };
+      const eventTypeKey = eventType as keyof typeof prev;
       
-      // 마지막 데이터 포인트와 같은 시간인지 확인
-      const lastDataPoint = currentData[currentData.length - 1];
-      if (lastDataPoint && lastDataPoint.time === timeString) {
-        // 같은 시간이면 카운트 증가
-        currentData[currentData.length - 1] = {
-          ...lastDataPoint,
-          count: lastDataPoint.count + 1
-        };
-      } else {
-        // 새로운 시간이면 새 데이터 포인트 추가
-        currentData.push({
-          time: timeString,
-          count: 1,
-          timestamp: now.getTime()
-        });
+      if (newChartData[eventTypeKey]) {
+        // 기존 데이터에서 같은 시간대 항목 찾기
+        const existingIndex = newChartData[eventTypeKey].findIndex(
+          item => item.time === timeKey
+        );
+        
+        if (existingIndex >= 0) {
+          // 기존 시간대 데이터 업데이트
+          newChartData[eventTypeKey][existingIndex] = {
+            time: timeKey,
+            count: newChartData[eventTypeKey][existingIndex].count + 1,
+            timestamp
+          };
+        } else {
+          // 새로운 시간대 데이터 추가
+          newChartData[eventTypeKey].push({
+            time: timeKey,
+            count: 1,
+            timestamp
+          });
+        }
+        
+        // 최근 1시간 데이터만 유지 (60개 항목)
+        if (newChartData[eventTypeKey].length > 60) {
+          newChartData[eventTypeKey] = newChartData[eventTypeKey].slice(-60);
+        }
       }
       
-      // 1시간(12개 데이터 포인트, 5분 간격)까지만 유지
-      if (currentData.length > 12) {
-        currentData.shift();
-      }
-      
-      return {
-        ...prev,
-        [endpoint]: currentData
-      };
+      return newChartData;
     });
   }, []);
 
-  // ref에 최신 함수 저장
-  updateChartDataRef.current = updateChartData;
+  // 배치 업데이트 실행 함수
+  const executeBatchUpdate = useCallback(() => {
+    console.log('📊 배치 업데이트 실행');
+    
+    setData(prev => {
+      const newData = { ...prev };
+      
+      // 배치 데이터를 실제 데이터에 추가
+      if (batchDataRef.current.authSystem.length > 0) {
+        newData.authSystem = [...newData.authSystem, ...batchDataRef.current.authSystem];
+        if (newData.authSystem.length > 1000) {
+          newData.authSystem = newData.authSystem.slice(-1000);
+        }
+      }
+      
+      if (batchDataRef.current.authResource.length > 0) {
+        newData.authResource = [...newData.authResource, ...batchDataRef.current.authResource];
+        if (newData.authResource.length > 1000) {
+          newData.authResource = newData.authResource.slice(-1000);
+        }
+      }
+      
+      if (batchDataRef.current.authFailure.length > 0) {
+        newData.authFailure = [...newData.authFailure, ...batchDataRef.current.authFailure];
+        if (newData.authFailure.length > 1000) {
+          newData.authFailure = newData.authFailure.slice(-1000);
+        }
+      }
+      
+      if (batchDataRef.current.authSuspicious.length > 0) {
+        newData.authSuspicious = [...newData.authSuspicious, ...batchDataRef.current.authSuspicious];
+        if (newData.authSuspicious.length > 1000) {
+          newData.authSuspicious = newData.authSuspicious.slice(-1000);
+        }
+      }
+      
+      return newData;
+    });
+    
+    // 배치 데이터 초기화
+    batchDataRef.current = {
+      authSystem: [],
+      authResource: [],
+      authFailure: [],
+      authSuspicious: []
+    };
+  }, []);
 
-  const connect = useCallback(async () => {
-    if (isConnectedRef.current || isConnectingRef.current) {
-      console.log('SSE 연결 시도 중단: 이미 연결 중 또는 연결됨');
-      return;
-    }
-
+  // fetch를 사용한 SSE 연결 생성 함수
+  const createSSEConnection = useCallback((endpoint: string, eventType: string): AbortController | null => {
     if (!token) {
-      console.log('SSE 연결 시도 중단: 토큰이 없습니다');
-      return;
+      console.error('JWT 토큰이 없습니다.');
+      return null;
     }
 
-    isConnectingRef.current = true;
-    console.log('SSE 연결 시작...');
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    console.log(`🔗 SSE 연결 생성: ${url}`);
 
-    const endpoints = [
-      { key: 'authSystem', url: API_CONFIG.ENDPOINTS.AUTH_SYSTEM },
-      { key: 'authResource', url: API_CONFIG.ENDPOINTS.AUTH_RESOURCE },
-      { key: 'authFailure', url: API_CONFIG.ENDPOINTS.AUTH_FAILURE },
-      { key: 'authSuspicious', url: API_CONFIG.ENDPOINTS.AUTH_SUSPICIOUS }
-    ];
-
-    const newAbortControllers: AbortController[] = [];
-
-    const connectToEndpoint = async (key: string, url: string) => {
-      const abortController = new AbortController();
-      newAbortControllers.push(abortController);
-
+    const abortController = new AbortController();
+    
+    const startSSEConnection = async () => {
       try {
-        console.log(`🔄 SSE 연결 시도: ${key}`);
-        
-        const response = await fetch(`${API_CONFIG.BASE_URL}${url}`, {
+        const response = await fetch(url, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Accept': 'text/event-stream',
             'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
           },
-          signal: abortController.signal,
+          signal: abortController.signal
         });
 
         if (!response.ok) {
-          console.error(`❌ SSE 연결 실패: ${key} - ${response.status} ${response.statusText}`);
-          console.error(`요청 URL: ${API_CONFIG.BASE_URL}${url}`);
-          console.error(`토큰: ${token ? '존재함' : '없음'}`);
-          const errorText = await response.text();
-          console.error(`에러 응답: ${errorText}`);
-          return; // 실패 시 재시도하지 않고 종료
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        console.log(`✅ SSE 연결 성공: ${key}`);
-        console.log(`📡 SSE 스트림 시작: ${key} - ${API_CONFIG.BASE_URL}${url}`);
+        console.log(`✅ SSE 연결 성공: ${eventType}`);
+        setIsConnected(true);
 
-        if (!response.body) {
-          throw new Error('Response body is null');
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Response body reader not available');
         }
 
-        const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
           
           if (done) {
-            console.log(`SSE 스트림 종료: ${key}`);
+            console.log(`🔌 SSE 연결 종료: ${eventType}`);
             break;
           }
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
+            if (line.trim() === '') continue;
+            
             if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') {
+                console.log(`🔌 SSE 스트림 완료: ${eventType}`);
+                return;
+              }
+
               try {
-                const jsonData = line.slice(6); // 'data: ' 제거
-                if (jsonData.trim() === '') continue;
+                const sseEvent: StandardSSEEvent = JSON.parse(data);
+                const parsedEvent = parseSSEEvent(eventType, sseEvent.data.rawMessage);
                 
-                const newEvent: AuditEvent = JSON.parse(jsonData);
-                
-                // 버퍼에 데이터 추가 (실시간 업데이트하지 않음)
-                setDataBuffer(prev => ({
-                  ...prev,
-                  [key as keyof typeof prev]: [newEvent, ...prev[key as keyof typeof prev]]
-                }));
+                if (parsedEvent) {
+                  // 배치 데이터에 추가
+                  if (eventType === 'auth_system') {
+                    batchDataRef.current.authSystem.push(parsedEvent as AuthSystemEvent);
+                  } else if (eventType === 'auth_resource') {
+                    batchDataRef.current.authResource.push(parsedEvent as AuthResourceEvent);
+                  } else if (eventType === 'auth_failure') {
+                    batchDataRef.current.authFailure.push(parsedEvent as AuthFailureEvent);
+                  } else if (eventType === 'auth_suspicious') {
+                    batchDataRef.current.authSuspicious.push(parsedEvent as AuthSuspiciousEvent);
+                  }
+                  
+                  // 차트 데이터 즉시 업데이트
+                  updateChartData(eventType);
+                  
+                  console.log(`📨 ${eventType} 이벤트 수신:`, parsedEvent);
+                }
               } catch (error) {
-                console.error(`SSE 데이터 파싱 오류 (${key}):`, error);
+                console.error('SSE 메시지 처리 오류:', error, data);
               }
             }
           }
         }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          console.log(`SSE 연결 중단: ${key}`);
+          console.log(`🔌 SSE 연결 중단: ${eventType}`);
         } else {
-          console.error(`SSE 연결 오류: ${key}`, error);
-          console.error(`요청 URL: ${API_CONFIG.BASE_URL}${url}`);
-          console.error(`토큰: ${token ? '존재함' : '없음'}`);
-          if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-            console.error('네트워크 오류: 서버에 연결할 수 없습니다. CORS 설정이나 서버 상태를 확인하세요.');
-          }
-          // 재시도하지 않음
+          console.error(`❌ SSE 연결 오류 (${eventType}):`, error);
+          setIsConnected(false);
         }
       }
     };
 
-    // 모든 엔드포인트에 동시 연결
-    const connectionPromises = endpoints.map(({ key, url }) => 
-      connectToEndpoint(key, url)
-    );
+    startSSEConnection();
+    return abortController;
+  }, [token, updateChartData]);
 
-    setAbortControllers(newAbortControllers);
-    isConnectedRef.current = true;
-    isConnectingRef.current = false;
-    setIsConnected(true);
+  // 모든 SSE 연결 시작
+  const connect = useCallback(() => {
+    if (!isAuthenticated || !token) {
+      console.error('인증되지 않은 사용자입니다.');
+      return;
+    }
 
-    // 연결을 백그라운드에서 실행
-    Promise.allSettled(connectionPromises).then(results => {
-      const failedConnections = results.filter(result => result.status === 'rejected').length;
-      if (failedConnections > 0) {
-        console.warn(`${failedConnections}개의 SSE 연결이 실패했습니다.`);
+    console.log('🚀 SSE 연결 시작');
+    
+    // 기존 연결 정리
+    Object.values(connectionsRef.current).forEach(controller => {
+      if (controller) {
+        controller.abort();
       }
-    }).catch(error => {
-      console.error('SSE 연결 중 오류 발생:', error);
-      isConnectingRef.current = false;
     });
-  }, [token]);
-
-  const disconnect = useCallback(() => {
-    abortControllers.forEach(controller => {
-      controller.abort();
-    });
-    setAbortControllers([]);
-    isConnectedRef.current = false;
-    isConnectingRef.current = false;
+    
+    connectionsRef.current = {
+      authSystem: null,
+      authResource: null,
+      authFailure: null,
+      authSuspicious: null
+    };
+    
     setIsConnected(false);
-  }, [abortControllers]);
+    
+    if (batchUpdateTimerRef.current) {
+      window.clearInterval(batchUpdateTimerRef.current);
+      batchUpdateTimerRef.current = null;
+    }
 
-  const clearData = useCallback(() => {
-    setData({
-      authSystem: [],
-      authResource: [],
-      authFailure: [],
-      authSuspicious: []
+    // 4개 엔드포인트에 대한 SSE 연결 생성
+    const authSystemController = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_SYSTEM, 'auth_system');
+    const authResourceController = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_RESOURCE, 'auth_resource');
+    const authFailureController = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_FAILURE, 'auth_failure');
+    const authSuspiciousController = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_SUSPICIOUS, 'auth_suspicious');
+
+    if (authSystemController) connectionsRef.current.authSystem = authSystemController;
+    if (authResourceController) connectionsRef.current.authResource = authResourceController;
+    if (authFailureController) connectionsRef.current.authFailure = authFailureController;
+    if (authSuspiciousController) connectionsRef.current.authSuspicious = authSuspiciousController;
+
+    // 배치 업데이트 타이머 시작 (5초 주기)
+    if (batchUpdateTimerRef.current) {
+      clearInterval(batchUpdateTimerRef.current);
+    }
+    
+    batchUpdateTimerRef.current = window.setInterval(executeBatchUpdate, 5000);
+  }, [isAuthenticated, token, executeBatchUpdate, createSSEConnection]);
+
+  // 모든 SSE 연결 종료
+  const forceDisconnect = useCallback(() => {
+    console.log('🔌 SSE 연결 종료');
+    
+    Object.values(connectionsRef.current).forEach(controller => {
+      if (controller) {
+        controller.abort();
+      }
     });
-    setChartData({
-      authSystem: [],
-      authResource: [],
-      authFailure: [],
-      authSuspicious: []
-    });
-    setDataBuffer({
-      authSystem: [],
-      authResource: [],
-      authFailure: [],
-      authSuspicious: []
-    });
+    
+    connectionsRef.current = {
+      authSystem: null,
+      authResource: null,
+      authFailure: null,
+      authSuspicious: null
+    };
+    
+    setIsConnected(false);
+    
+    if (batchUpdateTimerRef.current) {
+      window.clearInterval(batchUpdateTimerRef.current);
+      batchUpdateTimerRef.current = null;
+    }
   }, []);
 
-  // 토큰이 없을 때만 연결 해제
-  useEffect(() => {
-    if (!token && (isConnectedRef.current || isConnectingRef.current)) {
-      console.log('토큰 없음, SSE 연결 해제');
-      disconnect();
-    }
-  }, [token]); // disconnect 의존성 제거
+  // 더미 데이터 생성 함수
+  const generateDummyData = useCallback(() => {
+    console.log('🎭 더미 데이터 생성');
+    
+    const now = new Date();
+    const timeString = now.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
 
-  // 컴포넌트 언마운트 시 연결 해제
+    // 더미 시스템 이벤트
+    const dummySystemEvent: AuthSystemEvent = {
+      id: `system-${Date.now()}`,
+      event_time_kst: timeString,
+      processing_time_kst: timeString,
+      principal: 'test-user',
+      client_ip: '192.168.1.100',
+      method_name: 'testMethod',
+      granted: false,
+      resource_type: 'CLUSTER',
+      resource_name: 'test-cluster',
+      operation: 'READ'
+    };
+
+    // 더미 리소스 이벤트
+    const dummyResourceEvent: AuthResourceEvent = {
+      id: `resource-${Date.now()}`,
+      event_time_kst: timeString,
+      processing_time_kst: timeString,
+      principal: 'test-user',
+      client_ip: '192.168.1.101',
+      method_name: 'testMethod',
+      granted: false,
+      resource_type: 'TOPIC',
+      resource_name: 'test-topic',
+      operation: 'WRITE'
+    };
+
+    // 더미 실패 이벤트
+    const dummyFailureEvent: AuthFailureEvent = {
+      id: `failure-${Date.now()}`,
+      client_ip: '192.168.1.102',
+      alert_time_kst: timeString,
+      alert_type: 'FREQUENT_FAILURES',
+      description: '10초 내 2회 이상 인증 실패',
+      failure_count: 3
+    };
+
+    // 더미 의심 이벤트
+    const dummySuspiciousEvent: AuthSuspiciousEvent = {
+      id: `suspicious-${Date.now()}`,
+      client_ip: '192.168.1.103',
+      alert_time_kst: timeString,
+      alert_type: 'INACTIVITY_AFTER_FAILURE',
+      description: '인증 실패 후 10초간 비활성 상태',
+      failure_count: 1
+    };
+
+    // 배치 데이터에 추가
+    batchDataRef.current.authSystem.push(dummySystemEvent);
+    batchDataRef.current.authResource.push(dummyResourceEvent);
+    batchDataRef.current.authFailure.push(dummyFailureEvent);
+    batchDataRef.current.authSuspicious.push(dummySuspiciousEvent);
+
+    // 차트 데이터 업데이트
+    updateChartData('auth_system');
+    updateChartData('auth_resource');
+    updateChartData('auth_failure');
+    updateChartData('auth_suspicious');
+  }, [updateChartData]);
+
+  // 컴포넌트 언마운트 시 연결 정리
   useEffect(() => {
     return () => {
-      abortControllers.forEach(controller => {
-        controller.abort();
-      });
+      forceDisconnect();
     };
-  }, [abortControllers]);
+  }, [forceDisconnect]);
 
-  // 5초마다 버퍼의 데이터를 실제 데이터로 업데이트
+  // 인증 상태 변경 시 연결 관리
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDataBuffer(prevBuffer => {
-        // 버퍼에 데이터가 있으면 실제 데이터로 업데이트
-        const hasNewData = Object.values(prevBuffer).some(events => events.length > 0);
-        
-        if (hasNewData) {
-          console.log('📊 5초 간격 데이터 업데이트');
-          
-          setData(prevData => {
-            const newData = { ...prevData };
-            Object.keys(prevBuffer).forEach(key => {
-              if (prevBuffer[key as keyof typeof prevBuffer].length > 0) {
-                // 새로운 데이터를 앞에 추가하고 최대 100개 유지
-                newData[key as keyof typeof newData] = [...prevBuffer[key as keyof typeof prevBuffer], ...prevData[key as keyof typeof prevData]].slice(0, 100);
-                updateChartDataRef.current?.(key);
-              }
-            });
-            return newData;
-          });
-          
-          // 버퍼 초기화
-          return {
-            authSystem: [],
-            authResource: [],
-            authFailure: [],
-            authSuspicious: []
-          };
-        }
-        
-        return prevBuffer;
-      });
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, []);
+    if (!isAuthenticated) {
+      forceDisconnect();
+    }
+  }, [isAuthenticated, forceDisconnect]);
 
-  // 5초마다 차트 데이터 업데이트 (빈 데이터도 유지)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setChartData(prev => {
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        });
-        
-        const updatedData = { ...prev };
-        
-        Object.keys(updatedData).forEach(key => {
-          const currentData = [...updatedData[key]];
-          const lastDataPoint = currentData[currentData.length - 1];
-          
-          // 마지막 데이터 포인트가 5분 이상 오래되었다면 새로운 빈 데이터 포인트 추가
-          if (lastDataPoint && now.getTime() - lastDataPoint.timestamp > 5 * 60 * 1000) {
-            currentData.push({
-              time: timeString,
-              count: 0,
-              timestamp: now.getTime()
-            });
-            
-            // 12개 데이터 포인트까지만 유지
-            if (currentData.length > 12) {
-              currentData.shift();
-            }
-            
-            updatedData[key] = currentData;
-          }
-        });
-        
-        return updatedData;
-      });
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, []);
+  const value: SSEContextType = {
+    isConnected,
+    data,
+    chartData,
+    connect,
+    forceDisconnect,
+    generateDummyData
+  };
 
   return (
-    <SSEContext.Provider value={{
-      isConnected,
-      data,
-      chartData,
-      connect,
-      disconnect,
-      clearData
-    }}>
+    <SSEContext.Provider value={value}>
       {children}
     </SSEContext.Provider>
   );

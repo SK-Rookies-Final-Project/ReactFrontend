@@ -2,6 +2,7 @@ import React, { createContext, useContext, ReactNode, useState, useEffect } from
 import { API_CONFIG } from '../config/api';
 import { User } from '../types';
 import { checkNetworkStatus, getErrorMessage } from '../utils/networkUtils';
+import { apiClient } from '../utils/apiClient';
 
 interface AuthContextType {
   user: User | null;
@@ -41,27 +42,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (username: string, password: string): Promise<void> => {
+    // test, test 계정으로 더미 로그인
+    if (username === 'test' && password === 'test') {
+      console.log('더미 계정으로 로그인 중...');
+      
+      const userData: User = {
+        id: 'test-user',
+        username: 'test',
+        email: 'test@example.com',
+      };
+
+      // 더미 JWT 토큰 생성 (실제로는 유효하지 않지만 테스트용)
+      const dummyToken = 'dummy-jwt-token-for-test-user';
+      
+      setToken(dummyToken);
+      setUser(userData);
+      localStorage.setItem('auth_token', dummyToken);
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      
+      console.log('더미 로그인 성공');
+      return;
+    }
+
     // 네트워크 상태 확인
     if (!checkNetworkStatus()) {
       throw new Error('인터넷 연결을 확인해주세요.');
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10초 타임아웃
-
     try {
       console.log('로그인 시도 중...', { username, baseUrl: API_CONFIG.BASE_URL });
       
-      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGIN}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-        signal: controller.signal,
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.LOGIN, {
+        username,
+        password
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -87,17 +101,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       console.log('로그인 성공');
     } catch (error) {
-      clearTimeout(timeoutId);
       console.error('로그인 오류:', error);
       throw new Error(getErrorMessage(error));
     }
   };
 
   const logout = () => {
+    console.log('🔌 로그아웃 시작 - SSE 연결 해제 예정');
+    
+    // 토큰을 먼저 null로 설정하여 SSEContext가 자동으로 연결 해제하도록 함
     setToken(null);
     setUser(null);
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
+    
+    console.log('✅ 로그아웃 완료 - SSE 연결이 자동으로 해제됩니다');
   };
 
   const isAuthenticated = !!token && !!user;

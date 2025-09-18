@@ -1,0 +1,57 @@
+# api/kafka/auth_failure
+{
+    "id": "1140b940-81f8-44b6-a77b-839cdd7c93d0",
+    "client_ip": "43.200.111.22",
+    "alert_time_kst": "2025-09-17 14:58:27.177 KST",
+    "alert_type": "FREQUENT_FAILURES",
+    "description": "IP 43.200.111.22 has failed authentication 2 times within 10 seconds.",
+    "failure_count": 2
+}
+
+# api/kafka/auth_suspicious
+{
+    "id": "4c71daf3-187c-433f-9274-f361efd9af8f",
+    "client_ip": "13.125.214.25",
+    "alert_time_kst": "2025-09-17 15:06:08.206 KST",
+    "alert_type": "INACTIVITY_AFTER_FAILURE",
+    "description": "IP 13.125.214.25 showed no activity for 10 seconds after a single authentication failure.",
+    "failure_count": 1
+}
+
+# api/kafka/auth_system
+{
+    "id": "a2e66f7c-6b3a-4811-85db-536c34a5a629",
+    "event_time_kst": "2025-09-17 15:11:52.428 KST",
+    "processing_time_kst": "2025-09-17 15:11:52.783 KST",
+    "principal": "User:ca2",
+    "client_ip": "127.0.0.1",
+    "method_name": "mds.Authorize",
+    "granted": false,
+    "resource_type": "SecurityMetadata",
+    "resource_name": "security-metadata",
+    "operation": "Describe"
+}
+
+# api/kafka/auth_resource
+{
+    "id": "355f22bd-8c16-486d-81a3-5fd01d9a1867",
+    "event_time_kst": "2025-09-17 15:03:19.050 KST",
+    "processing_time_kst": "2025-09-17 15:03:19.615 KST",
+    "principal": "User:dr",
+    "client_ip": "3.39.210.4",
+    "method_name": "kafka.Produce",
+    "granted": false,
+    "resource_type": "Topic",
+    "resource_name": "audit-topic",
+    "operation": "Write"
+}
+
+# sse 연결 응답 메시지{
+    "eventType": "system-level-false",
+    "timestamp": "2025-09-17T15:55:55.759+09:00",
+    "data": {
+        "rawMessage": "실제 Kafka 메시지 내용",
+        "topicType": "system-level-false",
+        "serverTime": 1758087916114
+    }
+}
