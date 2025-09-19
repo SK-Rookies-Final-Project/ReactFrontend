@@ -1,24 +1,15 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useSSE } from '../contexts/SSEContext';
 import { Shield, Activity, Settings, BarChart3, Database } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
   const { user, logout } = useAuth();
-  const { generateDummyData, data, isConnected } = useSSE();
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    console.log('🔌 대시보드에서 로그아웃 시작');
-    
-    // AuthContext의 logout 호출 (토큰 제거로 인해 SSEContext가 자동으로 연결 해제)
     logout();
-    
-    // 로그인 페이지로 이동
     navigate('/login');
-    
-    console.log('✅ 대시보드 로그아웃 완료');
   };
 
   const menuItems = [
@@ -71,15 +62,6 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => {
-                console.log('🎭 더미데이터 생성 버튼 클릭');
-                generateDummyData();
-              }}
-              className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors duration-200"
-            >
-              더미데이터 생성
-            </button>
-            <button
               onClick={handleLogout}
               className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors duration-200"
             >
@@ -124,70 +106,6 @@ export const DashboardPage: React.FC = () => {
               </div>
             );
           })}
-        </div>
-
-        {/* Stats Overview */}
-        <div className="mt-12 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            시스템 상태 개요
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className={`text-2xl font-bold ${isConnected ? 'text-green-600' : 'text-red-600'}`}>
-                {isConnected ? '연결됨' : '연결 끊김'}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">SSE 연결 상태</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{data.authSystem.length}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">시스템 이벤트</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">{data.authResource.length}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">리소스 이벤트</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">{data.authFailure.length + data.authSuspicious.length}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">경고/의심 활동</div>
-            </div>
-          </div>
-        </div>
-
-        {/* 데이터 상세 정보 */}
-        <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            실시간 데이터 현황
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-              <h3 className="font-medium text-blue-900 dark:text-blue-100">시스템 레벨 접근 제어</h3>
-              <p className="text-2xl font-bold text-blue-600 mt-2">{data.authSystem.length}</p>
-              <p className="text-sm text-blue-600 dark:text-blue-400">
-                거부된 접근: {data.authSystem.filter(e => !e.granted).length}건
-              </p>
-            </div>
-            <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
-              <h3 className="font-medium text-orange-900 dark:text-orange-100">리소스 레벨 접근 제어</h3>
-              <p className="text-2xl font-bold text-orange-600 mt-2">{data.authResource.length}</p>
-              <p className="text-sm text-orange-600 dark:text-orange-400">
-                거부된 접근: {data.authResource.filter(e => !e.granted).length}건
-              </p>
-            </div>
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
-              <h3 className="font-medium text-yellow-900 dark:text-yellow-100">인증 실패</h3>
-              <p className="text-2xl font-bold text-yellow-600 mt-2">{data.authFailure.length}</p>
-              <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                총 실패 횟수: {data.authFailure.reduce((sum, e) => sum + e.failure_count, 0)}회
-              </p>
-            </div>
-            <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
-              <h3 className="font-medium text-purple-900 dark:text-purple-100">의심스러운 활동</h3>
-              <p className="text-2xl font-bold text-purple-600 mt-2">{data.authSuspicious.length}</p>
-              <p className="text-sm text-purple-600 dark:text-purple-400">
-                감지된 활동: {data.authSuspicious.length}건
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

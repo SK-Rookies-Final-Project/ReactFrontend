@@ -5,11 +5,16 @@ async function request<T = any>(
   path: string,
   init?: RequestInit & { expect?: 'json' | 'text' }
 ): Promise<T> {
+  // 로컬 스토리지에서 JWT 토큰 가져오기
+  const token = localStorage.getItem('auth_token');
+  
   const res = await fetch(`${API_CONFIG.BASE_URL}${path}`, {
     credentials: 'include', // 세션/쿠키 쓰면 유지
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      // JWT 토큰이 있으면 Authorization 헤더에 추가
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(init?.headers || {}),
     },
   });

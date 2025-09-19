@@ -1,113 +1,329 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useSSE } from '../contexts/SSEContext';
 import { AuthSystemEvent, AuthResourceEvent, AuthFailureEvent, AuthSuspiciousEvent } from '../types';
-import { ArrowLeft, Activity, Users, AlertTriangle, Eye } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ArrowLeft, Activity, Users, AlertTriangle, Eye, Wifi, WifiOff } from 'lucide-react';
+import { API_CONFIG } from '../config/api';
 
 export const AuditPage: React.FC = () => {
-  const { logout } = useAuth();
-  const { isConnected, data, chartData, connect, forceDisconnect, generateDummyData } = useSSE();
+  const { logout, token } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'system' | 'resource' | 'failure' | 'suspicious'>('system');
+  
+  // 상태 관리
+  const [activeTab, setActiveTab] = useState<'system' | 'resource' | 'failure' | 'suspicious'>('failure');
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [showModal, setShowModal] = useState(false);
-  const mountedRef = useRef(true);
-  const connectionAttemptedRef = useRef(false);
+  const [isConnected, setIsConnected] = useState(false);
+  
+  // 실시간 데이터
+  const [data, setData] = useState({
+    authSystem: [] as AuthSystemEvent[],
+    authResource: [] as AuthResourceEvent[],
+    authFailure: [] as AuthFailureEvent[],
+    authSuspicious: [] as AuthSuspiciousEvent[]
+  });
+  
+  // SSE 연결 참조 (AbortController 사용)
+  const connectionsRef = useRef<{
+    authSystem: AbortController | null;
+    authResource: AbortController | null;
+    authFailure: AbortController | null;
+    authSuspicious: AbortController | null;
+  }>({
+    authSystem: null,
+    authResource: null,
+    authFailure: null,
+    authSuspicious: null
+  });
 
-  // 감사 모니터링 페이지 접속 시 SSE 연결 시작 (1회만)
-  useEffect(() => {
-    console.log('🔗 감사 모니터링 페이지 접속');
-    mountedRef.current = true;
-    
-    if (connectionAttemptedRef.current || isConnected) {
-      console.log('🔄 SSE 연결이 이미 시도되었거나 연결되어 있습니다');
-      return;
+  // fetch를 사용한 SSE 연결 생성 함수 (MIME 타입 문제 해결)
+  const createSSEConnection = (endpoint: string, eventType: string) => {
+    if (!token) {
+      console.error('JWT 토큰이 필요합니다.');
+      return null;
     }
+
+    const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+    console.log(`🔗 SSE 연결 생성: ${url}`);
+
+    const abortController = new AbortController();
     
-    connectionAttemptedRef.current = true;
-    
-    const connectTimer = setTimeout(() => {
-      if (mountedRef.current) {
-        console.log('🚀 SSE 연결 시도 시작');
-        connect();
+    const startSSEConnection = async () => {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'text/event-stream, text/plain', // 두 MIME 타입 모두 허용
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive'
+          },
+          signal: abortController.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        console.log(`✅ SSE 연결 성공: ${eventType}`);
+        console.log(`🔍 응답 헤더:`, Object.fromEntries(response.headers.entries()));
+        console.log(`🔍 응답 상태:`, response.status, response.statusText);
+        setIsConnected(true);
+        
+        // 연결 후 10초 타이머로 메시지 수신 확인
+        setTimeout(() => {
+          console.log(`⏰ [${eventType}] 10초 경과 - 메시지 수신 여부 확인`);
+        }, 10000);
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Response body reader not available');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            console.log(`🔌 SSE 연결 종료: ${eventType}`);
+            break;
+          }
+
+          const chunk = decoder.decode(value, { stream: true });
+          console.log(`🔍 [${eventType}] 수신된 raw chunk:`, JSON.stringify(chunk));
+          
+          buffer += chunk;
+          
+          // 완전한 JSON 객체들을 찾기 위한 로직
+          let startIndex = 0;
+          let braceCount = 0;
+          let inString = false;
+          let escapeNext = false;
+          
+          for (let i = 0; i < buffer.length; i++) {
+            const char = buffer[i];
+            
+            if (escapeNext) {
+              escapeNext = false;
+              continue;
+            }
+            
+            if (char === '\\') {
+              escapeNext = true;
+              continue;
+            }
+            
+            if (char === '"') {
+              inString = !inString;
+              continue;
+            }
+            
+            if (!inString) {
+              if (char === '{') {
+                if (braceCount === 0) {
+                  startIndex = i;
+                }
+                braceCount++;
+              } else if (char === '}') {
+                braceCount--;
+                
+                if (braceCount === 0) {
+                  // 완전한 JSON 객체 발견
+                  const jsonString = buffer.substring(startIndex, i + 1);
+                  console.log(`🎯 [${eventType}] 완전한 JSON 발견:`, jsonString);
+                  
+                  try {
+                    const eventData = JSON.parse(jsonString);
+                    console.log(`🔍 파싱된 ${eventType} 데이터:`, eventData);
+                    
+                    // 연결 메시지는 건너뛰기
+                    if (eventData.type === 'connection') {
+                      console.log(`⏭️ 연결 메시지 건너뛰기:`, eventData.message);
+                    } else {
+                      // 데이터 상태 업데이트
+                      setData(prevData => {
+                        const newData = { ...prevData };
+                        
+                        console.log(`🔄 데이터 업데이트 전 상태:`, {
+                          authSystem: prevData.authSystem.length,
+                          authResource: prevData.authResource.length,
+                          authFailure: prevData.authFailure.length,
+                          authSuspicious: prevData.authSuspicious.length
+                        });
+                        
+                        switch (eventType) {
+                          case 'auth_system':
+                            newData.authSystem = [...newData.authSystem, eventData as AuthSystemEvent].slice(-100);
+                            console.log(`✅ auth_system 데이터 추가: 총 ${newData.authSystem.length}개`);
+                            break;
+                          case 'auth_resource':
+                            newData.authResource = [...newData.authResource, eventData as AuthResourceEvent].slice(-100);
+                            console.log(`✅ auth_resource 데이터 추가: 총 ${newData.authResource.length}개`);
+                            break;
+                          case 'auth_failure':
+                            newData.authFailure = [...newData.authFailure, eventData as AuthFailureEvent].slice(-100);
+                            console.log(`✅ auth_failure 데이터 추가: 총 ${newData.authFailure.length}개`);
+                            break;
+                          case 'auth_suspicious':
+                            newData.authSuspicious = [...newData.authSuspicious, eventData as AuthSuspiciousEvent].slice(-100);
+                            console.log(`✅ auth_suspicious 데이터 추가: 총 ${newData.authSuspicious.length}개`);
+                            break;
+                        }
+                        
+                        console.log(`🔄 데이터 업데이트 후 상태:`, {
+                          authSystem: newData.authSystem.length,
+                          authResource: newData.authResource.length,
+                          authFailure: newData.authFailure.length,
+                          authSuspicious: newData.authSuspicious.length
+                        });
+                        
+                        return newData;
+                      });
+                      
+                      console.log(`📊 ${eventType} 이벤트 추가 완료`);
+                    }
+                  } catch (parseError) {
+                    console.error(`JSON 파싱 오류 (${eventType}):`, parseError, jsonString);
+                  }
+                  
+                  // 처리된 JSON 제거
+                  buffer = buffer.substring(i + 1);
+                  i = -1; // 다시 처음부터 검색
+                  startIndex = 0;
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log(`🔌 SSE 연결 중단: ${eventType}`);
+        } else {
+          console.error(`❌ SSE 연결 오류 (${eventType}):`, error);
+          setIsConnected(false);
+        }
       }
-    }, 200);
-
-    return () => {
-      console.log('🔌 AuditPage useEffect cleanup');
-      clearTimeout(connectTimer);
     };
-  }, []);
 
-  // 연결 상태 모니터링
-  useEffect(() => {
-    console.log('📊 SSE 연결 상태:', {
-      isConnected,
-      dataLengths: {
-        authSystem: data.authSystem.length,
-        authResource: data.authResource.length,
-        authFailure: data.authFailure.length,
-        authSuspicious: data.authSuspicious.length
+    startSSEConnection();
+    return abortController;
+  };
+
+  // 모든 SSE 연결 시작
+  const connectToSSE = () => {
+    console.log('🚀 SSE 연결 시작');
+    
+    // 기존 연결 정리
+    Object.values(connectionsRef.current).forEach(controller => {
+      if (controller) {
+        controller.abort();
       }
     });
-  }, [isConnected, data]);
 
-  const tabs = [
-    {
-      id: 'system' as const,
-      title: '시스템 레벨 접근 제어',
-      description: 'SecurityMetadata, 클러스터 설정 등 시스템 레벨 리소스 접근 모니터링',
-      icon: Activity,
-      color: 'bg-red-500',
-      data: data.authSystem,
-      chartData: chartData.authSystem,
-      endpoint: '/api/kafka/auth_system'
-    },
-    {
-      id: 'resource' as const,
-      title: '리소스 레벨 접근 제어',
-      description: 'Topic, ConsumerGroup 등 Kafka 리소스별 접근 권한 모니터링',
-      icon: Users,
-      color: 'bg-orange-500',
-      data: data.authResource,
-      chartData: chartData.authResource,
-      endpoint: '/api/kafka/auth_resource'
-    },
-    {
-      id: 'failure' as const,
-      title: '인증 실패 모니터링',
-      description: 'FREQUENT_FAILURES: 10초 내 2회 이상 인증 실패 감지',
-      icon: AlertTriangle,
-      color: 'bg-yellow-500',
-      data: data.authFailure,
-      chartData: chartData.authFailure,
-      endpoint: '/api/kafka/auth_failure'
-    },
-    {
-      id: 'suspicious' as const,
-      title: '의심스러운 활동 감지',
-      description: 'INACTIVITY_AFTER_FAILURE: 인증 실패 후 10초간 비활성 상태 감지',
-      icon: Eye,
-      color: 'bg-purple-500',
-      data: data.authSuspicious,
-      chartData: chartData.authSuspicious,
-      endpoint: '/api/kafka/auth_suspicious'
+    // 4개 엔드포인트에 연결
+    connectionsRef.current.authSystem = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_SYSTEM, 'auth_system');
+    connectionsRef.current.authResource = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_RESOURCE, 'auth_resource');
+    connectionsRef.current.authFailure = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_FAILURE, 'auth_failure');
+    connectionsRef.current.authSuspicious = createSSEConnection(API_CONFIG.ENDPOINTS.AUTH_SUSPICIOUS, 'auth_suspicious');
+  };
+
+  // 모든 SSE 연결 종료
+  const disconnectSSE = () => {
+    console.log('🔌 SSE 연결 종료');
+    
+    Object.values(connectionsRef.current).forEach(controller => {
+      if (controller) {
+        controller.abort();
+      }
+    });
+    
+    connectionsRef.current = {
+      authSystem: null,
+      authResource: null,
+      authFailure: null,
+      authSuspicious: null
+    };
+    
+    setIsConnected(false);
+  };
+
+  // 페이지 접속 시 SSE 연결 시작
+  useEffect(() => {
+    console.log('🔗 감사 모니터링 페이지 접속');
+    connectToSSE();
+
+    // 컴포넌트 언마운트 시 연결 정리
+    return () => {
+      disconnectSSE();
+    };
+  }, [token]);
+
+  // 데이터 상태 변경 모니터링
+  useEffect(() => {
+    console.log('📊 데이터 상태 변경 감지:', {
+      authSystem: data.authSystem.length,
+      authResource: data.authResource.length,
+      authFailure: data.authFailure.length,
+      authSuspicious: data.authSuspicious.length,
+      총합: data.authSystem.length + data.authResource.length + data.authFailure.length + data.authSuspicious.length
+    });
+    
+    // 최신 데이터 샘플 출력
+    if (data.authFailure.length > 0) {
+      console.log('📝 최신 auth_failure 데이터:', data.authFailure[data.authFailure.length - 1]);
     }
-  ];
+    if (data.authSuspicious.length > 0) {
+      console.log('📝 최신 auth_suspicious 데이터:', data.authSuspicious[data.authSuspicious.length - 1]);
+    }
+    if (data.authSystem.length > 0) {
+      console.log('📝 최신 auth_system 데이터:', data.authSystem[data.authSystem.length - 1]);
+    }
+    if (data.authResource.length > 0) {
+      console.log('📝 최신 auth_resource 데이터:', data.authResource[data.authResource.length - 1]);
+    }
+  }, [data]);
 
-  const activeTabData = tabs.find(tab => tab.id === activeTab);
-
-  const handleLogout = () => {
-    mountedRef.current = false;
-    connectionAttemptedRef.current = false;
-    forceDisconnect();
-    logout();
-    navigate('/login');
+  // 시간 포맷팅 함수
+  const formatEventTime = (event: AuthSystemEvent | AuthResourceEvent | AuthFailureEvent | AuthSuspiciousEvent) => {
+    try {
+      let timeValue: string;
+      
+      // AuthSystemEvent, AuthResourceEvent: eventTimeKST 사용
+      if ('eventTimeKST' in event) {
+        timeValue = event.eventTimeKST;
+      }
+      // AuthFailureEvent, AuthSuspiciousEvent: alertTimeKST 사용
+      else if ('alertTimeKST' in event) {
+        timeValue = event.alertTimeKST;
+      } else {
+        return '시간 정보 없음';
+      }
+      
+      // KST 제거하고 간단한 형식으로 변환
+      const cleanTime = timeValue.replace(' KST', '').trim();
+      const date = new Date(cleanTime);
+      
+      if (isNaN(date.getTime())) {
+        return timeValue; // 파싱 실패 시 원본 반환
+      }
+      
+      return date.toLocaleString('ko-KR', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    } catch (error) {
+      console.error('시간 포맷팅 오류:', error);
+      return '시간 오류';
+    }
   };
 
   const handleEventClick = (event: any) => {
+    console.log('🔍 이벤트 클릭:', event);
     setSelectedEvent(event);
     setShowModal(true);
   };
@@ -117,131 +333,63 @@ export const AuditPage: React.FC = () => {
     setSelectedEvent(null);
   };
 
-  const formatEventTime = (event: AuthSystemEvent | AuthResourceEvent | AuthFailureEvent | AuthSuspiciousEvent) => {
-    try {
-      // 이벤트 발생 시간만 표시 (처리 시간 제외)
-      let timeValue: string;
-      
-      // AuthSystemEvent, AuthResourceEvent의 경우: event_time_kst가 이벤트 발생 시간
-      if ('event_time_kst' in event) {
-        timeValue = event.event_time_kst;
-      }
-      // AuthFailureEvent, AuthSuspiciousEvent의 경우: alert_time_kst가 이벤트 발생 시간
-      else if ('alert_time_kst' in event) {
-        timeValue = event.alert_time_kst;
-      } else {
-        return '시간 정보 없음';
-      }
-      
-      if (typeof timeValue !== 'string') {
-        return String(timeValue);
-      }
-      
-      // KST 제거
-      let cleanTimeStr = timeValue.replace(' KST', '').trim();
-      
-      // 1. 한국어 시간 형식 파싱: "2025. 9. 17. 오후 7:11:59"
-      let match = cleanTimeStr.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
-      
-      if (match) {
-        const [, year, month, day, ampm, hour, minute, second] = match;
-        let hour24 = parseInt(hour, 10);
-        
-        // 오후 시간 처리 (12시는 그대로, 나머지는 +12)
-        if (ampm === '오후' && hour24 !== 12) {
-          hour24 += 12;
-        }
-        // 오전 12시는 0시로 변환
-        if (ampm === '오전' && hour24 === 12) {
-          hour24 = 0;
-        }
-        
-        const date = new Date(
-          parseInt(year, 10),
-          parseInt(month, 10) - 1, // 월은 0부터 시작
-          parseInt(day, 10),
-          hour24,
-          parseInt(minute, 10),
-          parseInt(second, 10)
-        );
-        
-        return date.toLocaleString('ko-KR', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-      }
-      
-      // 2. ISO 형식 파싱: "2025-09-17T15:11:52.428" 또는 "2025-09-17 15:11:52.428"
-      match = cleanTimeStr.match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?/);
-      if (match) {
-        const [, year, month, day, hour, minute, second, millisecond] = match;
-        const date = new Date(
-          parseInt(year, 10),
-          parseInt(month, 10) - 1,
-          parseInt(day, 10),
-          parseInt(hour, 10),
-          parseInt(minute, 10),
-          parseInt(second, 10),
-          millisecond ? parseInt(millisecond, 10) : 0
-        );
-        
-        return date.toLocaleString('ko-KR', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-      }
-      
-      // 3. 일반적인 한국어 형식: "2025. 9. 17. 15:11:52"
-      match = cleanTimeStr.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{1,2}):(\d{2}):(\d{2})/);
-      if (match) {
-        const [, year, month, day, hour, minute, second] = match;
-        const date = new Date(
-          parseInt(year, 10),
-          parseInt(month, 10) - 1,
-          parseInt(day, 10),
-          parseInt(hour, 10),
-          parseInt(minute, 10),
-          parseInt(second, 10)
-        );
-        
-        return date.toLocaleString('ko-KR', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-      }
-      
-      // 4. 기본 파싱 시도
-      const parsed = new Date(cleanTimeStr);
-      if (!isNaN(parsed.getTime())) {
-        return parsed.toLocaleString('ko-KR', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-      }
-      
-      console.warn('지원하지 않는 시간 형식:', timeValue);
-      return 'Invalid Date';
-    } catch (error) {
-      console.error('시간 파싱 오류:', error, event);
-      return '시간 파싱 오류';
-    }
+  const handleLogout = () => {
+    disconnectSSE();
+    logout();
+    navigate('/login');
   };
+
+  // 탭 설정
+  const tabs = [
+    {
+      id: 'system' as const,
+      title: '시스템 레벨 접근 제어',
+      description: 'SecurityMetadata, 클러스터 설정 등 시스템 레벨 리소스 접근 모니터링',
+      icon: Activity,
+      color: 'bg-red-500',
+      data: data.authSystem,
+      endpoint: '/api/auth/auth_system'
+    },
+    {
+      id: 'resource' as const,
+      title: '리소스 레벨 접근 제어',
+      description: 'Topic, ConsumerGroup 등 Kafka 리소스별 접근 권한 모니터링',
+      icon: Users,
+      color: 'bg-orange-500',
+      data: data.authResource,
+      endpoint: '/api/auth/auth_resource'
+    },
+    {
+      id: 'failure' as const,
+      title: '인증 실패 모니터링',
+      description: 'FREQUENT_FAILURES: 10초 내 2회 이상 인증 실패 감지',
+      icon: AlertTriangle,
+      color: 'bg-yellow-500',
+      data: data.authFailure,
+      endpoint: '/api/auth/auth_failure'
+    },
+    {
+      id: 'suspicious' as const,
+      title: '의심스러운 활동 감지',
+      description: 'INACTIVITY_AFTER_FAILURE: 인증 실패 후 10초간 비활성 상태 감지',
+      icon: Eye,
+      color: 'bg-purple-500',
+      data: data.authSuspicious,
+      endpoint: '/api/auth/auth_suspicious'
+    }
+  ];
+
+  const activeTabData = tabs.find(tab => tab.id === activeTab);
+  
+  // 렌더링 시 현재 탭 데이터 확인
+  useEffect(() => {
+    if (activeTabData) {
+      console.log(`🎯 현재 활성 탭 (${activeTab}) 데이터:`, {
+        개수: activeTabData.data.length,
+        샘플: activeTabData.data.length > 0 ? activeTabData.data[0] : '데이터 없음'
+      });
+    }
+  }, [activeTab, activeTabData]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -262,38 +410,27 @@ export const AuditPage: React.FC = () => {
                 감사 모니터링
               </h1>
             </div>
+            
             <div className="flex items-center space-x-4">
+              {/* SSE 연결 상태 표시 */}
               <div className="flex items-center space-x-2">
-                <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                {isConnected ? (
+                  <Wifi className="h-5 w-5 text-green-500" />
+                ) : (
+                  <WifiOff className="h-5 w-5 text-red-500" />
+                )}
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   {isConnected ? '연결됨' : '연결 끊김'}
                 </span>
               </div>
               
-              {/* 재연결 및 더미데이터 버튼 */}
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => {
-                    console.log('🔄 재연결 버튼 클릭');
-                    forceDisconnect();
-                    setTimeout(() => {
-                      connect();
-                    }, 100);
-                  }}
-                  className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition-colors duration-200"
-                >
-                  재연결
-                </button>
-                <button
-                  onClick={() => {
-                    console.log('🎭 더미데이터 생성 버튼 클릭');
-                    generateDummyData();
-                  }}
-                  className="px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors duration-200"
-                >
-                  더미데이터 생성
-                </button>
-              </div>
+              {/* 재연결 버튼 */}
+              <button
+                onClick={connectToSSE}
+                className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition-colors duration-200"
+              >
+                재연결
+              </button>
               
               <button
                 onClick={handleLogout}
@@ -307,25 +444,31 @@ export const AuditPage: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tab Navigation */}
-        <div className="mb-8">
+        {/* 탭 네비게이션 */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow mb-6">
           <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="-mb-px flex space-x-8 overflow-x-auto">
+            <nav className="-mb-px flex space-x-8 px-6">
               {tabs.map((tab) => {
                 const IconComponent = tab.icon;
                 const isActive = activeTab === tab.id;
+                
                 return (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
                       isActive
                         ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
                     }`}
                   >
-                    <IconComponent className="h-5 w-5" />
+                    <IconComponent className="h-4 w-4" />
                     <span>{tab.title}</span>
+                    <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                      isActive ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                    }`}>
+                      {tab.data.length}
+                    </span>
                   </button>
                 );
               })}
@@ -333,108 +476,27 @@ export const AuditPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Content */}
+        {/* 활성 탭 내용 */}
         {activeTabData && (
-          <div className="space-y-6">
-            {/* Stats Cards - 엔드포인트별 맞춤형 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* 총 이벤트 수 */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className={`p-3 rounded-lg ${activeTabData.color} text-white`}>
-                    <Activity className="h-6 w-6" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">총 이벤트</p>
-                    <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                      {activeTabData.data.length}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* 엔드포인트별 특화 통계 */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="p-3 rounded-lg bg-blue-500 text-white">
-                    <AlertTriangle className="h-6 w-6" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                      {activeTab === 'system' ? '거부된 시스템 접근' : 
-                       activeTab === 'resource' ? '거부된 리소스 접근' :
-                       activeTab === 'failure' ? '총 인증 실패 횟수' : '의심 활동 수'}
-                    </p>
-                    <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                      {activeTab === 'system' || activeTab === 'resource' 
-                        ? activeTabData.data.filter((event: any) => event.granted === false).length
-                        : activeTab === 'failure'
-                        ? activeTabData.data.reduce((sum: number, event: any) => sum + (event.failure_count || 0), 0)
-                        : activeTabData.data.length
-                      }
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* 최근 1시간 활동 */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="p-3 rounded-lg bg-green-500 text-white">
-                    <Activity className="h-6 w-6" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">최근 1시간</p>
-                    <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                      {activeTabData.chartData.reduce((sum: number, point: any) => sum + point.count, 0)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Chart */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                {activeTabData.title} - 시간별 통계 (최근 1시간)
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {activeTabData.title}
               </h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={activeTabData.chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="time" 
-                      tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => value}
-                    />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip 
-                      labelFormatter={(value) => `시간: ${value}`}
-                      formatter={(value: number) => [value, '이벤트 수']}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="count" 
-                      stroke="#3B82F6" 
-                      strokeWidth={2}
-                      dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {activeTabData.description}
+              </p>
             </div>
-
-            {/* Event List - 간단한 목록 */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  최근 이벤트 목록
-                </h3>
-              </div>
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {activeTabData.data.slice(0, 10).map((event: any, index: number) => (
-                  <div 
-                    key={index} 
+            
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {activeTabData.data.length === 0 ? (
+                <div className="px-6 py-8 text-center">
+                  <p className="text-gray-500 dark:text-gray-400">이벤트가 없습니다.</p>
+                </div>
+              ) : (
+                activeTabData.data.slice(0, 50).map((event, index) => (
+                  <div
+                    key={index}
                     className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
                     onClick={() => handleEventClick(event)}
                   >
@@ -447,36 +509,31 @@ export const AuditPage: React.FC = () => {
                               {formatEventTime(event)}
                             </p>
                             <p className="text-sm text-gray-600 dark:text-gray-400">
-                              IP: {event.client_ip}
+                              IP: {event.clientIp}
                               {(activeTab === 'system' || activeTab === 'resource') && event.principal && 
                                 ` • 사용자: ${event.principal}`
                               }
-                              {(activeTab === 'failure' || activeTab === 'suspicious') && event.alert_type && 
-                                ` • ${event.alert_type}`
+                              {(activeTab === 'failure' || activeTab === 'suspicious') && event.alertType && 
+                                ` • ${event.alertType}`
                               }
                             </p>
                           </div>
                         </div>
                       </div>
                       <div className="ml-4 flex items-center space-x-2">
-                        {/* 상태 표시 */}
-                        {(activeTab === 'system' || activeTab === 'resource') && ('granted' in event) && (
+                        {(activeTab === 'system' || activeTab === 'resource') && (
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             event.granted 
                               ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                               : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                           }`}>
-                            {event.granted ? '허용됨' : '거부됨'}
+                            {event.granted ? '허용' : '거부'}
                           </span>
                         )}
                         
-                        {(activeTab === 'failure' || activeTab === 'suspicious') && ('alert_type' in event) && (
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            activeTab === 'failure' 
-                              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                              : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                          }`}>
-                            {event.alert_type}
+                        {(activeTab === 'failure' || activeTab === 'suspicious') && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                            {event.failureCount}회
                           </span>
                         )}
                         
@@ -485,13 +542,8 @@ export const AuditPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))}
-                {activeTabData.data.length === 0 && (
-                  <div className="px-6 py-8 text-center">
-                    <p className="text-gray-500 dark:text-gray-400">이벤트가 없습니다.</p>
-                  </div>
-                )}
-              </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -524,7 +576,7 @@ export const AuditPage: React.FC = () => {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-500 dark:text-gray-400">IP 주소</label>
-                    <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.client_ip}</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.clientIp}</p>
                   </div>
                 </div>
 
@@ -538,17 +590,17 @@ export const AuditPage: React.FC = () => {
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500 dark:text-gray-400">메서드</label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.method_name || 'N/A'}</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.methodName || 'N/A'}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-gray-500 dark:text-gray-400">리소스 타입</label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.resource_type || 'N/A'}</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.resourceType || 'N/A'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500 dark:text-gray-400">리소스 이름</label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.resource_name || 'N/A'}</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.resourceName || 'N/A'}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -557,7 +609,7 @@ export const AuditPage: React.FC = () => {
                         <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.operation || 'N/A'}</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-500 dark:text-gray-400">접근 허용</label>
+                        <label className="text-sm font-medium text-gray-500 dark:text-gray-400">허용 여부</label>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           selectedEvent.granted 
                             ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
@@ -576,11 +628,11 @@ export const AuditPage: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-gray-500 dark:text-gray-400">경고 타입</label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.alert_type || 'N/A'}</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.alertType || 'N/A'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500 dark:text-gray-400">실패 횟수</label>
-                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.failure_count || 0}회</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{selectedEvent.failureCount || 0}회</p>
                       </div>
                     </div>
                     <div>

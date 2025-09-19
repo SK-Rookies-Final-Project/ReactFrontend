@@ -1,26 +1,5 @@
 // 네트워크 상태 확인 유틸리티
 
-export const checkServerConnection = async (baseUrl: string): Promise<boolean> => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5초 타임아웃
-    
-    const response = await fetch(`${baseUrl}/health`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    return response.ok;
-  } catch (error) {
-    console.error('서버 연결 확인 실패:', error);
-    return false;
-  }
-};
-
-export const checkNetworkStatus = (): boolean => {
-  return navigator.onLine;
-};
 
 export const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) {

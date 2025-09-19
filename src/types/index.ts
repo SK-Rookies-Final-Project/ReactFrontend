@@ -1,75 +1,54 @@
-// system-level-false
+// api/auth/auth_system
 export interface AuthSystemEvent {
   id: string;
-  event_time_kst: string; // KST 형식 문자열
-  processing_time_kst: string; // KST 형식 문자열
+  eventTimeKST: string; // KST 형식 문자열 (camelCase)
+  processingTimeKST: string; // KST 형식 문자열 (camelCase)
   principal: string;
-  client_ip: string;
-  method_name: string;
+  clientIp: string; // camelCase
+  methodName: string; // camelCase
   granted: boolean;
-  resource_type: string;
-  resource_name: string;
+  resourceType: string; // camelCase
+  resourceName: string; // camelCase
   operation: string;
 }
 
-// resource-level-false
+// api/auth/auth_resource
 export interface AuthResourceEvent {
   id: string;
-  event_time_kst: string; // KST 형식 문자열
-  processing_time_kst: string; // KST 형식 문자열
+  eventTimeKST: string; // KST 형식 문자열 (camelCase)
+  processingTimeKST: string; // KST 형식 문자열 (camelCase)
   principal: string;
-  client_ip: string;
-  method_name: string;
+  clientIp: string; // camelCase
+  methodName: string; // camelCase
   granted: boolean;
-  resource_type: string;
-  resource_name: string;
+  resourceType: string; // camelCase
+  resourceName: string; // camelCase
   operation: string;
 }
 
-// certified-2time
+// api/auth/auth_failure
 export interface AuthFailureEvent {
   id: string;
-  client_ip: string;
-  alert_time_kst: string;
-  alert_type: string;
+  clientIp: string; // camelCase
+  alertTimeKST: string; // camelCase
+  alertType: string; // camelCase
   description: string;
-  failure_count: number;
+  failureCount: number; // camelCase
 }
 
-// certified-notMove
+// api/auth/auth_suspicious
 export interface AuthSuspiciousEvent {
   id: string;
-  client_ip: string;
-  alert_time_kst: string;
-  alert_type: string;
+  clientIp: string; // camelCase
+  alertTimeKST: string; // camelCase
+  alertType: string; // camelCase
   description: string;
-  failure_count: number;
+  failureCount: number; // camelCase
 }
 
-// 표준화된 SSE 이벤트 형식 (백엔드에서 전달하는 형식)
-export interface StandardSSEEvent {
-  eventType: string;
-  timestamp: string;
-  data: {
-    rawMessage: string;
-    topicType: string;
-    serverTime: number;
-  };
-}
-
-// 기존 이벤트 타입들 (rawMessage에서 파싱된 데이터)
+// 모든 이벤트 타입들
 export type AuditEvent = AuthSystemEvent | AuthResourceEvent | AuthFailureEvent | AuthSuspiciousEvent;
 
-// 차트 데이터 타입
-export interface ChartDataPoint {
-  time: string;
-  count: number;
-  timestamp: number;
-}
-
-export interface ChartData {
-  [key: string]: ChartDataPoint[];
-}
 
 // 사용자 타입
 export interface User {

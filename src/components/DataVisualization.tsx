@@ -1,12 +1,9 @@
 import React from 'react';
 // 차트 관련 import 제거
 import { 
-  Certified2TimeRecord, 
-  CertifiedNotMoveRecord, 
-  ResourceLevelFalseRecord, 
-  SystemLevelFalseRecord,
   GroupCountResult 
 } from '../services/dbApiService';
+import { parseKoreanTimeString } from '../utils/dateUtils';
 
 interface DataVisualizationProps {
   data: any[];
@@ -26,19 +23,10 @@ export const DataVisualization: React.FC<DataVisualizationProps> = ({
   // 차트 관련 함수 제거
 
   const formatTime = (timeString: string) => {
-    try {
-      const date = new Date(timeString);
-      return date.toLocaleString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-    } catch {
-      return timeString;
-    }
+    if (!timeString) return '';
+    
+    // 백엔드에서 전달하는 한국어 형식 시간 문자열을 파싱
+    return parseKoreanTimeString(timeString);
   };
 
   const getTableTitle = () => {

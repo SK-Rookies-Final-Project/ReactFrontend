@@ -141,3 +141,72 @@ export const formatBackendTimeToSimple = (backendTimeString: string): string => 
     return backendTimeString; // 변환 실패 시 원본 반환
   }
 };
+
+/**
+ * 백엔드에서 받은 한국어 형식 시간 문자열을 파싱하여 표시용으로 변환
+ * @param koreanTimeString 한국어 형식 시간 문자열 (예: "2025-02-03 오전 04:09:02")
+ * @returns 표시용 한국 시간 형식의 문자열 (예: "2025. 02. 03. 오전 4:09:02")
+ */
+export const parseKoreanTimeString = (koreanTimeString: string): string => {
+  if (!koreanTimeString) return '';
+  
+  try {
+    // 한국어 시간 형식을 파싱하기 위한 정규식
+    // "2025-02-03 오전 04:09:02" 또는 "2025-02-03 오후 04:09:02" 형태
+    const koreanTimeRegex = /^(\d{4})-(\d{2})-(\d{2})\s+(오전|오후)\s+(\d{1,2}):(\d{2}):(\d{2})$/;
+    const match = koreanTimeString.match(koreanTimeRegex);
+    
+    if (!match) {
+      // 정규식이 매치되지 않으면 일반적인 Date 파싱 시도
+      const date = new Date(koreanTimeString);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleString('ko-KR', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        });
+      }
+      return koreanTimeString;
+    }
+    
+    const [, year, month, day, period, hour, minute, second] = match;
+    
+    // 12시간 형식을 24시간 형식으로 변환
+    let hour24 = parseInt(hour, 10);
+    if (period === '오후' && hour24 !== 12) {
+      hour24 += 12;
+    } else if (period === '오전' && hour24 === 12) {
+      hour24 = 0;
+    }
+    
+    // Date 객체 생성 (한국 시간대 기준)
+    const date = new Date(
+      parseInt(year, 10),
+      parseInt(month, 10) - 1, // 월은 0부터 시작
+      parseInt(day, 10),
+      hour24,
+      parseInt(minute, 10),
+      parseInt(second, 10)
+    );
+    
+    // 한국 시간대로 표시
+    return date.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Seoul'
+    });
+    
+  } catch (error) {
+    console.error('한국어 시간 파싱 오류:', error);
+    return koreanTimeString; // 변환 실패 시 원본 반환
+  }
+};

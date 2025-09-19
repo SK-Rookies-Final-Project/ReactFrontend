@@ -4,10 +4,10 @@ import { apiClient } from '../utils/apiClient';
 export interface QueryParams {
   start?: string; // ISO-8601 datetime (YYYY-MM-DDTHH:mm:ssZ 형식)
   end?: string; // ISO-8601 datetime (YYYY-MM-DDTHH:mm:ssZ 형식)
-  client_ip?: string;
-  alert_type?: string;
+  clientIp?: string;
+  alertType?: string;
   principal?: string;
-  resource_name?: string;
+  resourceName?: string;
   operation?: string;
 }
 

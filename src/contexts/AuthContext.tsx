@@ -1,7 +1,7 @@
 import React, { createContext, useContext, ReactNode, useState, useEffect } from 'react';
 import { API_CONFIG } from '../config/api';
 import { User } from '../types';
-import { checkNetworkStatus, getErrorMessage } from '../utils/networkUtils';
+import { getErrorMessage } from '../utils/networkUtils';
 import { apiClient } from '../utils/apiClient';
 
 interface AuthContextType {
@@ -105,15 +105,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    console.log('🔌 로그아웃 시작 - SSE 연결 해제 예정');
-    
-    // 토큰을 먼저 null로 설정하여 SSEContext가 자동으로 연결 해제하도록 함
     setToken(null);
     setUser(null);
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
-    
-    console.log('✅ 로그아웃 완료 - SSE 연결이 자동으로 해제됩니다');
   };
 
   const isAuthenticated = !!token && !!user;

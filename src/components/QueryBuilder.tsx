@@ -162,8 +162,8 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
               </label>
               <input
                 type="text"
-                value={params.client_ip || ''}
-                onChange={(e) => handleInputChange('client_ip', e.target.value)}
+                value={params.clientIp || ''}
+                onChange={(e) => handleInputChange('clientIp', e.target.value)}
                 placeholder="예: 192.168.1.100"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white"
               />
