@@ -22,6 +22,8 @@ export const SettingsPage: React.FC = () => {
   const [replication, setReplication] = useState(1);
 
   // ---- Schemas ----
+  const [newSubject, setNewSubject] = useState("");
+  const [newSchema, setNewSchema] = useState("");
   const [subjects, setSubjects] = useState<string[]>([]);
   const [schemasLoading, setSchemasLoading] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -97,6 +99,31 @@ export const SettingsPage: React.FC = () => {
       toast(e?.message || '토픽 생성 실패');
     }
   };
+
+  const handleRegisterSchema = async () => {
+  if (!newSubject || !newSchema) {
+    alert("subject와 schema를 입력하세요");
+    return;
+  }
+  try {
+    const res = await fetch("/api/schemas/avro", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: newSubject, schema: newSchema }),
+    });
+    if (res.ok) {
+      alert("✅ 스키마 등록 성공");
+      setNewSubject("");
+      setNewSchema("");
+      reloadSchemas(); // 목록 갱신
+    } else {
+      const err = await res.text();
+      alert("❌ 등록 실패: " + err);
+    }
+  } catch (e) {
+    alert("❌ 요청 실패: " + e);
+  }
+};
 
   const handleSelectSubject = async (s: string) => {
     setSelectedSubject(s);
@@ -313,6 +340,31 @@ export const SettingsPage: React.FC = () => {
               ) : (
                 <div className="text-gray-500">좌측에서 subject를 선택하세요</div>
               )}
+            
+              {/* === 새 스키마 등록 Form === */}
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">새 Avro 스키마 등록</h3>
+                <input
+                  type="text"
+                  placeholder="subject 이름"
+                  value={newSubject}
+                  onChange={e => setNewSubject(e.target.value)}
+                  className="w-full mb-2 px-3 py-2 rounded-lg border bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100"
+                />
+                <textarea
+                  placeholder="Avro 스키마(JSON)"
+                  value={newSchema}
+                  onChange={e => setNewSchema(e.target.value)}
+                  rows={6}
+                  className="w-full mb-3 px-3 py-2 rounded-lg border bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 font-mono text-xs"
+                />
+                <button
+                  onClick={handleRegisterSchema}
+                  className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+                >
+                  스키마 등록
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -354,12 +406,12 @@ export const SettingsPage: React.FC = () => {
                         </span>
                       </div>
                     </div>
-                    <button
+                    {/* <button
                       onClick={() => handleDeleteGroup(g)}
                       className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"
                     >
                       <Trash2 className="h-4 w-4" /> 삭제
-                    </button>
+                    </button> */}
                   </li>
                 );
               })}
