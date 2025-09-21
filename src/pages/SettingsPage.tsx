@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, FolderKanban, FileCode2, Users, Plus, Trash2, RefreshCcw } from 'lucide-react';
+import { ArrowLeft, FolderKanban, FileCode2, Users, Plus, RefreshCcw } from 'lucide-react';
+import { API_CONFIG } from '../config/api';
 
 import {
   listTopics, createTopic,
   listSchemaSubjects, getLatestSchema,
-  listConsumerGroups, listConsumerGroupSummaries, deleteConsumerGroup,
+  listConsumerGroups, listConsumerGroupSummaries,
   type LatestSchema, type ConsumerGroupSummary
 } from '../lib/kafkaAdmin';
 
@@ -38,40 +39,35 @@ export const SettingsPage: React.FC = () => {
   const [msg, setMsg] = useState('');
   const toast = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 2000); };
 
-  // 초기 로드
-  useEffect(() => {
-    reloadTopics();
-    reloadSchemas();
-    reloadGroups();
-  }, []);
-
   // reload helpers
-  const reloadTopics = async () => {
+  const reloadTopics = useCallback(async () => {
     setTopicsLoading(true);
     try {
       const allTopics = await listTopics();
       // 🔹 '_'로 시작하는 토픽 제외
       const visibleTopics = allTopics.filter((t) => !t.startsWith('_'));
       setTopics(visibleTopics);
-    } catch (e: any) {
-      toast(e?.message || '토픽 조회 실패');
+    } catch (e: unknown) {
+      const error = e as Error;
+      toast(error?.message || '토픽 조회 실패');
     } finally {
       setTopicsLoading(false);
     }
-  };                
+  }, []);                
 
-  const reloadSchemas = async () => {
+  const reloadSchemas = useCallback(async () => {
     setSchemasLoading(true);
     try {
       setSubjects(await listSchemaSubjects());
-    } catch (e: any) {
-      toast(e?.message || '스키마 subject 조회 실패');
+    } catch (e: unknown) {
+      const error = e as Error;
+      toast(error?.message || '스키마 subject 조회 실패');
     } finally {
       setSchemasLoading(false);
     }
-  };
+  }, []);
 
-  const reloadGroups = async () => {
+  const reloadGroups = useCallback(async () => {
     setGroupsLoading(true);
     try {
       const [names, sums] = await Promise.all([
@@ -80,12 +76,13 @@ export const SettingsPage: React.FC = () => {
       ]);
       setGroups(names);
       setSummaries(sums);
-    } catch (e: any) {
-      toast(e?.message || '컨슈머 그룹 조회 실패');
+    } catch (e: unknown) {
+      const error = e as Error;
+      toast(error?.message || '컨슈머 그룹 조회 실패');
     } finally {
       setGroupsLoading(false);
     }
-  };
+  }, []);
 
   // actions
   const handleCreateTopic = async () => {
@@ -95,8 +92,9 @@ export const SettingsPage: React.FC = () => {
       toast(`토픽 생성: ${newTopic}`);
       setNewTopic('');
       await reloadTopics();
-    } catch (e: any) {
-      toast(e?.message || '토픽 생성 실패');
+    } catch (e: unknown) {
+      const error = e as Error;
+      toast(error?.message || '토픽 생성 실패');
     }
   };
 
@@ -106,7 +104,7 @@ export const SettingsPage: React.FC = () => {
     return;
   }
   try {
-    const res = await fetch("/api/schemas/avro", {
+    const res = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.SCHEMA_REGISTER}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ subject: newSubject, schema: newSchema }),
@@ -129,21 +127,18 @@ export const SettingsPage: React.FC = () => {
     setSelectedSubject(s);
     try {
       setLatestSchema(await getLatestSchema(s));
-    } catch (e: any) {
-      toast(e?.message || '최신 스키마 조회 실패');
+    } catch (e: unknown) {
+      const error = e as Error;
+      toast(error?.message || '최신 스키마 조회 실패');
     }
   };
 
-  const handleDeleteGroup = async (gid: string) => {
-    if (!confirm(`컨슈머 그룹을 삭제할까요?\n${gid}`)) return;
-    try {
-      await deleteConsumerGroup(gid);
-      toast(`삭제 완료: ${gid}`);
-      await reloadGroups();
-    } catch (e: any) {
-      toast(e?.message || '삭제 실패');
-    }
-  };
+  // 초기 로드
+  useEffect(() => {
+    reloadTopics();
+    reloadSchemas();
+    reloadGroups();
+  }, [reloadTopics, reloadSchemas, reloadGroups]);
 
   const handleLogout = () => {
     logout();

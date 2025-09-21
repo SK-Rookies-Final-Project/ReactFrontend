@@ -66,17 +66,13 @@ export interface GroupCountResult {
 const buildQueryString = (params: QueryParams): string => {
   const searchParams = new URLSearchParams();
   
-  console.log('🔍 쿼리 파라미터 빌딩:', params);
-  
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
       searchParams.append(key, value);
-      console.log(`  - ${key}: ${value}`);
     }
   });
   
   const queryString = searchParams.toString();
-  console.log('🔗 최종 쿼리 스트링:', queryString);
   return queryString ? `?${queryString}` : '';
 };
 

@@ -40,13 +40,6 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
     if (value) {
       const backendFormat = convertDateTimeLocalToBackend(value);
       
-      console.log(`🕐 ${field} 시간 변환:`, {
-        input: value,
-        backendFormat: backendFormat
-      });
-      
-      console.log(`✅ ${field} 백엔드 전송 형식:`, backendFormat);
-      
       setParams(prev => ({
         ...prev,
         [field]: backendFormat
@@ -234,7 +227,6 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
       <div className="flex justify-end mt-4">
         <button
           onClick={() => {
-            console.log('🔘 조회 버튼 클릭:', params);
             onQueryChange(params);
           }}
           disabled={isLoading}

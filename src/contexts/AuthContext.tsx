@@ -44,8 +44,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (username: string, password: string): Promise<void> => {
     // test, test 계정으로 더미 로그인
     if (username === 'test' && password === 'test') {
-      console.log('더미 계정으로 로그인 중...');
-      
       const userData: User = {
         id: 'test-user',
         username: 'test',
@@ -60,7 +58,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       localStorage.setItem('auth_token', dummyToken);
       localStorage.setItem('auth_user', JSON.stringify(userData));
       
-      console.log('더미 로그인 성공');
       return;
     }
 
@@ -68,8 +65,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // 실제 서버 연결은 fetch 요청에서 자체적으로 처리됨
 
     try {
-      console.log('로그인 시도 중...', { username, baseUrl: API_CONFIG.BASE_URL });
-      
       const response = await apiClient.post(API_CONFIG.ENDPOINTS.LOGIN, {
         username,
         password
@@ -97,9 +92,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('auth_user', JSON.stringify(userData));
       
-      console.log('로그인 성공');
     } catch (error) {
-      console.error('로그인 오류:', error);
       throw new Error(getErrorMessage(error));
     }
   };

@@ -108,7 +108,6 @@ export const formatBackendTimeToDisplay = (backendTimeString: string): string =>
       timeZone: 'Asia/Seoul'
     });
   } catch (error) {
-    console.error('시간 변환 오류:', error);
     return backendTimeString; // 변환 실패 시 원본 반환
   }
 };
@@ -137,7 +136,6 @@ export const formatBackendTimeToSimple = (backendTimeString: string): string => 
     
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   } catch (error) {
-    console.error('시간 변환 오류:', error);
     return backendTimeString; // 변환 실패 시 원본 반환
   }
 };
@@ -206,7 +204,6 @@ export const parseKoreanTimeString = (koreanTimeString: string): string => {
     });
     
   } catch (error) {
-    console.error('한국어 시간 파싱 오류:', error);
     return koreanTimeString; // 변환 실패 시 원본 반환
   }
 };

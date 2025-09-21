@@ -90,13 +90,6 @@ export const HistoryDashboard: React.FC = () => {
         clientIpGroupPromise,
         alertTypeGroupPromise
       ]);
-
-      console.log('📊 API 응답 데이터:', {
-        recordsCount: records.length,
-        totalCount: count,
-        clientIpGroupCount: clientIpGroup.length,
-        alertTypeGroupCount: alertTypeGroup.length
-      });
       
       setData(records);
       setTotalCount(count);
@@ -104,7 +97,6 @@ export const HistoryDashboard: React.FC = () => {
       setGroupByAlertType(alertTypeGroup);
 
     } catch (err) {
-      console.error('데이터 조회 오류:', err);
       setError(err instanceof Error ? err.message : '데이터 조회 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
@@ -113,7 +105,6 @@ export const HistoryDashboard: React.FC = () => {
 
   // 쿼리 파라미터 변경 시 데이터 조회
   const handleQueryChange = useCallback(async (params: QueryParams) => {
-    console.log('🔍 handleQueryChange 호출:', params);
     setQueryParams(params);
     await fetchData(params);
   }, [fetchData]);

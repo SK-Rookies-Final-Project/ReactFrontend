@@ -10,6 +10,7 @@ export const API_CONFIG = {
 
     TOPICS: '/api/kafka/topics',
     SCHEMAS_SUBJECTS: '/api/kafka/schemas/subjects',
+    SCHEMA_REGISTER: '/api/kafka/schemas/avro',
     SCHEMA_LATEST: (subject: string) =>
       `/api/kafka/schemas/${encodeURIComponent(subject)}/latest`,
 
