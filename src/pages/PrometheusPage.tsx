@@ -39,7 +39,7 @@ function useOnce<T = unknown[]>(fn: (signal?: AbortSignal) => Promise<T>, ignore
 }
 
 // ===== Prometheus windows & polling =====
-const WINDOW_RATE = '5m'   // smoothing for rate()
+const WINDOW_RATE = '1m'   // smoothing for rate()
 const POLL_MS = 5000          // 기존 폴링(컴포넌트/호스트 등)
 const BROKER_POLL_MS = 10000
 
@@ -272,46 +272,68 @@ export default function PrometheusPage() {
     promQuery(`(node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / node_memory_SwapTotal_bytes * 100`, signal), POLL_MS)
 
   // ===== 4) Producer Metrics =====
-  // Producer message rate (messages per second) - try multiple metric names including broker metrics
+  // Producer message rate (messages per second)
   const producerMsgRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_producer_record_send_total[${WINDOW_RATE}])) or sum(rate(kafka_producer_metrics_record_send_total[${WINDOW_RATE}])) or sum(rate(kafka_producer_metrics_records_sent_total[${WINDOW_RATE}])) or sum(rate(kafka_producer_metrics_messages_sent_total[${WINDOW_RATE}])) or sum(rate(kafka_producer_metrics_MessagesPerSec_OneMinuteRate[${WINDOW_RATE}])) or sum(rate(kafka_server_BrokerTopicMetrics_MessagesInPerSec_OneMinuteRate[${WINDOW_RATE}]))`, signal), POLL_MS)
+    promQuery(`sum(rate(kafka_produced_messages_total{job="kafka-producer"}[${WINDOW_RATE}]))`, signal), POLL_MS)
 
-  // Producer byte rate (bytes per second)
+  // Producer byte rate (fallback: use messages as proxy if bytes metric is unavailable)
   const producerByteRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_producer_record_send_total[${WINDOW_RATE}])) * avg(kafka_producer_record_size_avg)`, signal), POLL_MS)
+    promQuery(`sum(rate(kafka_produced_bytes_total{job="kafka-producer"}[${WINDOW_RATE}])) or on() vector(0)`, signal), POLL_MS)
 
-  // Producer error rate - try multiple metric names
+  // Producer error rate
   const producerErrorRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_producer_record_send_failed_total[${WINDOW_RATE}])) or sum(rate(kafka_producer_metrics_record_send_failed_total[${WINDOW_RATE}])) or sum(rate(kafka_producer_metrics_RecordErrorRate[${WINDOW_RATE}]))`, signal), POLL_MS)
+    promQuery(`sum(rate(kafka_produce_errors_total{job="kafka-producer"}[${WINDOW_RATE}]))`, signal), POLL_MS)
 
-  // Producer batch size
+  // Producer batch size (best-effort: if exporter exposes it)
   const producerBatchSize = usePoll((signal) =>
-    promQuery(`avg(kafka_producer_batch_size_avg)`, signal), POLL_MS)
+    promQuery(`avg_over_time(kafka_producer_batch_size{job="kafka-producer"}[${WINDOW_RATE}]) or on() vector(0)`, signal), POLL_MS)
 
-  // Producer request rate
+  // Producer request rate (best-effort if metric exists)
   const producerRequestRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_producer_request_total[${WINDOW_RATE}]))`, signal), POLL_MS)
+    promQuery(`sum(rate(kafka_producer_request_total{job="kafka-producer"}[${WINDOW_RATE}])) or on() vector(0)`, signal), POLL_MS)
 
   // ===== 5) Consumer Metrics =====
-  // Consumer message rate (messages per second) - try multiple metric names including broker metrics
+  // Consumer message rate (messages per second) - prefer our consumer exporter metrics; fall back to broker/JMX variants
   const consumerMsgRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_consumer_messages_consumed_total[${WINDOW_RATE}])) or sum(rate(kafka_consumer_metrics_messages_consumed_total[${WINDOW_RATE}])) or sum(rate(kafka_consumer_metrics_records_consumed_total[${WINDOW_RATE}])) or sum(rate(kafka_consumer_metrics_MessagesPerSec_OneMinuteRate[${WINDOW_RATE}])) or sum(rate(kafka_server_BrokerTopicMetrics_MessagesOutPerSec_OneMinuteRate[${WINDOW_RATE}]))`, signal), POLL_MS)
+    promQuery(
+      `(
+        sum(rate(kafka_consumer_messages_consumed_total{job="kafka-consumer"}[${WINDOW_RATE}]))
+        or sum(rate(kafka_consumer_metrics_messages_consumed_total{job="kafka-consumer"}[${WINDOW_RATE}]))
+        or sum(rate(kafka_consumer_metrics_records_consumed_total{job="kafka-consumer"}[${WINDOW_RATE}]))
+        or sum(rate(kafka_consumer_metrics_MessagesPerSec_OneMinuteRate{job="kafka-consumer"}[${WINDOW_RATE}]))
+        or sum(rate(kafka_server_BrokerTopicMetrics_MessagesOutPerSec_OneMinuteRate[${WINDOW_RATE}]))
+        or sum(rate(kafka_consumed_messages_total{job="kafka-consumer"}[${WINDOW_RATE}]))
+      ) or on() vector(0)`,
+      signal
+    ), POLL_MS)
 
   // Consumer byte rate (bytes per second)
   const consumerByteRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_consumer_bytes_consumed_total[${WINDOW_RATE}]))`, signal), POLL_MS)
+    promQuery(
+      `sum(rate(kafka_consumer_bytes_consumed_total{job="kafka-consumer"}[${WINDOW_RATE}])) or on() vector(0)`,
+      signal
+    ), POLL_MS)
 
   // Consumer lag (offset lag)
   const consumerLag = usePoll((signal) =>
-    promQuery(`sum(kafka_consumer_lag_sum)`, signal), POLL_MS)
+    promQuery(
+      `sum(kafka_consumer_lag_sum{job="kafka-consumer"}) or on() vector(0)`,
+      signal
+    ), POLL_MS)
 
   // Consumer fetch rate
   const consumerFetchRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_consumer_fetch_total[${WINDOW_RATE}]))`, signal), POLL_MS)
+    promQuery(
+      `sum(rate(kafka_consumer_fetch_total{job="kafka-consumer"}[${WINDOW_RATE}])) or on() vector(0)`,
+      signal
+    ), POLL_MS)
 
   // Consumer rebalance rate
   const consumerRebalanceRate = usePoll((signal) =>
-    promQuery(`sum(rate(kafka_consumer_rebalance_total[${WINDOW_RATE}]))`, signal), POLL_MS)
+    promQuery(
+      `sum(rate(kafka_consumer_rebalance_total{job="kafka-consumer"}[${WINDOW_RATE}])) or on() vector(0)`,
+      signal
+    ), POLL_MS)
 
   // ===== 3) Kafka broker important metrics (JMX exporter variants) =====
   // Some environments expose different metric names; try common fallbacks via OR
