@@ -8,16 +8,36 @@ export const API_CONFIG = {
     AUTH_SUSPICIOUS: '/api/auth/auth_suspicious',
     PROMETHEUS: '/prom',
 
+    // Topics
     TOPICS: '/api/kafka/topics',
-    SCHEMAS_SUBJECTS: '/api/kafka/schemas/subjects',
-    SCHEMA_REGISTER: '/api/kafka/schemas/avro',
-    SCHEMA_LATEST: (subject: string) =>
-      `/api/kafka/schemas/${encodeURIComponent(subject)}/latest`,
+    TOPIC_DELETE: (topicName: string) =>
+      `/api/kafka/topics/${encodeURIComponent(topicName)}`,
+    TOPICS_DESCRIBE: '/api/kafka/topics/describe',
 
-    CONSUMER_GROUPS: '/api/kafka/consumer-groups',       // GET 그룹 이름 목록
-    CONSUMER_GROUPS_SUMMARY: '/api/kafka/consumer-groups/summary', // GET 요약
+    // Consumer Groups
+    CONSUMER_GROUPS: '/api/kafka/consumer-groups',
+    CONSUMER_GROUP_DETAIL: (groupId: string) =>
+      `/api/kafka/consumer-groups/${encodeURIComponent(groupId)}`,
     CONSUMER_GROUP_DELETE: (groupId: string) =>
-      `/api/kafka/consumer-groups/${encodeURIComponent(groupId)}`, // DELETE
+      `/api/kafka/consumer-groups/${encodeURIComponent(groupId)}`,
+    CONSUMER_GROUP_RESET_OFFSET: (groupId: string) =>
+      `/api/kafka/consumer-groups/${encodeURIComponent(groupId)}/reset-offset`,
 
+    // ACLs
+    ACLS: '/api/kafka/acls',
+
+    // Configs
+    CONFIGS_CLUSTER: '/api/kafka/configs/cluster',
+    CONFIGS_TOPIC: (topicName: string) =>
+      `/api/kafka/configs/topics/${encodeURIComponent(topicName)}`,
+    CONFIGS_UPDATE: '/api/kafka/configs',
+
+    // Cluster Info
+    CLUSTER_INFO: '/api/kafka/cluster/info',
+
+    // Partitions
+    PARTITIONS: (topicName: string) =>
+      `/api/kafka/partitions/${encodeURIComponent(topicName)}`,
+    PARTITIONS_REASSIGN: '/api/kafka/partitions/reassign',
   }
 } as const;

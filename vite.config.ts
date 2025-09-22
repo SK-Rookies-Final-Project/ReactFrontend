@@ -14,11 +14,15 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/prom': {
-          target: env.VITE_PROM_URL,
+          target: env.VITE_PROM_URL || 'http://3.36.76.198:9090',
           changeOrigin: true,
-          // if Prometheus is behind HTTPS with a self-signed cert, you may need:
-          // secure: false,
+          secure: false,
           rewrite: (path: string) => path.replace(/^\/prom/, ''),
+          configure: (proxy, options) => {
+            proxy.on('error', (err, req, res) => {
+              console.log('🚨 Prometheus proxy error:', err.message);
+            });
+          },
         },
       },
     },
