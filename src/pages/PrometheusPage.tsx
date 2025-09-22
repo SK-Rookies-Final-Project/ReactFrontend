@@ -178,8 +178,8 @@ export default function PrometheusPage() {
   const [showDebugInfo, setShowDebugInfo] = useState(false)
 
   // 디버깅을 위한 메트릭 목록 확인 (AbortError도 에러로 처리)
-  const availableMetrics = useOnce((signal) => promQuery(`up{job=~"kafka.*"}`, signal), false)
-  const availableNodeMetrics = useOnce((signal) => promQuery(`up{job=~"node.*"}`, signal), false)
+  const availableMetrics = useOnce((signal) => promQuery(`up{job=~"kafka-brokers|kafka-controllers|schema-registry|connect|control-center|flink"}`, signal), false)
+  const availableNodeMetrics = useOnce((signal) => promQuery(`up{job=~"node-exporter"}`, signal), false)
   const availableJMXMetrics = useOnce((signal) => promQuery(`up{job=~".*JMX.*"}`, signal), false)
 
   const handleLogout = () => {
@@ -189,7 +189,7 @@ export default function PrometheusPage() {
   // ===== 1) Component/Process up/health =====
   // Prometheus 'up' by job/instance
   const upAll = usePoll((signal) =>
-    promQuery(`up{job=~"prometheus|node-exporter|kafka-controller|kafka-broker|schema-registry|kafka-connect"}`, signal), POLL_MS)
+    promQuery(`up{job=~"prometheus|node-exporter|kafka-controllers|kafka-brokers|schema-registry|connect|control-center|flink"}`, signal), POLL_MS)
   
   
   // Optional: blackbox_exporter HTTP checks (1 = healthy)
@@ -661,7 +661,7 @@ const topicBytesOut = usePoll((signal) =>
         )}
         {(!cpu.data || cpu.data.length === 0) && (
           <div className="text-gray-500 text-sm mb-4">
-            Hint: node_exporter targets appear DOWN or missing. Start node_exporter on your hosts and set targets to <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">&lt;host:9100&gt;</code>.
+            Hint: node_exporter targets appear DOWN or missing. If you use node_exporter, start it on your hosts and set targets to <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">&lt;host:9100&gt;</code>. Otherwise, this section can remain empty.
           </div>
         )}
         {(() => {
