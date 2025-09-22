@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, FolderKanban, FileCode2, Users, Plus, Trash2, RefreshCcw } from 'lucide-react';
+import { ArrowLeft, FolderKanban, FileCode2, Users, Plus, Trash2, RefreshCcw, Eye } from 'lucide-react';
 
 import {
   listTopics, createTopic,
   listSchemaSubjects, getLatestSchema,
   listConsumerGroups, listConsumerGroupSummaries, deleteConsumerGroup,
-  type LatestSchema, type ConsumerGroupSummary
+  getConsumerGroupDetail,
+  type LatestSchema, type ConsumerGroupSummary, type GroupDetail
 } from '../lib/kafkaAdmin';
+import { GroupDetailView } from '../components/GroupDetailView.tsx';
 
 export const SettingsPage: React.FC = () => {
   const { logout } = useAuth();
@@ -33,6 +35,8 @@ export const SettingsPage: React.FC = () => {
   const [groups, setGroups] = useState<string[]>([]);
   const [summaries, setSummaries] = useState<ConsumerGroupSummary[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<GroupDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // ---- Message (토스트 대용) ----
   const [msg, setMsg] = useState('');
@@ -73,6 +77,7 @@ export const SettingsPage: React.FC = () => {
 
   const reloadGroups = async () => {
     setGroupsLoading(true);
+    setSelectedGroup(null);
     try {
       const [names, sums] = await Promise.all([
         listConsumerGroups(),
@@ -142,6 +147,26 @@ export const SettingsPage: React.FC = () => {
       await reloadGroups();
     } catch (e: any) {
       toast(e?.message || '삭제 실패');
+    }
+  };
+
+  // 🔹 상세 보기 버튼 클릭 핸들러 추가
+  const handleViewGroupDetail = async (groupId: string) => {
+    // 이미 선택된 그룹을 다시 누르면 닫기
+    if (selectedGroup?.groupId === groupId) {
+      setSelectedGroup(null);
+      return;
+    }
+
+    setDetailLoading(true);
+    setSelectedGroup(null); // 이전 선택 초기화
+    try {
+      const detail = await getConsumerGroupDetail(groupId);
+      setSelectedGroup(detail);
+    } catch (e: any) {
+      toast(e?.message || '그룹 상세 정보 조회 실패');
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -394,8 +419,11 @@ export const SettingsPage: React.FC = () => {
             <ul className="space-y-2">
               {groups.map(g => {
                 const sm = summaries.find(s => s.groupId === g);
+                const isSelected = selectedGroup?.groupId === g;
                 return (
-                  <li key={g} className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <li key={g} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                      isSelected ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700' : 'border-gray-200 dark:border-gray-700'
+                    }`}>
                     <div>
                       <div className="text-gray-900 dark:text-gray-100 font-medium">{g}</div>
                       <div className="text-xs text-gray-500">
@@ -406,6 +434,16 @@ export const SettingsPage: React.FC = () => {
                         </span>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                      {/* 여기에 상세 보기 버튼 추가 */}
+                      <button
+                        onClick={() => handleViewGroupDetail(g)} // 이 함수를 추가해야 합니다.
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300"
+                      >
+                        <Eye className="h-4 w-4" /> 상세 보기
+                      </button>
+                      {/* 삭제 버튼은 주석 처리된 상태로 유지 */}
+                    </div>                    
                     {/* <button
                       onClick={() => handleDeleteGroup(g)}
                       className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"
@@ -417,6 +455,17 @@ export const SettingsPage: React.FC = () => {
               })}
             </ul>
           )}
+
+          {/* 추가: 상세 정보 UI (선택된 그룹이 있을 때만 렌더링) */}
+          {detailLoading && (
+            <div className="mt-6 p-4 text-center text-gray-500">상세 정보를 불러오는 중...</div>
+          )}
+          {selectedGroup && (
+            <GroupDetailView
+              group={selectedGroup}
+              onClose={() => setSelectedGroup(null)} // 닫기 함수
+            />
+          )}  
         </section>
       </div>
     </div>

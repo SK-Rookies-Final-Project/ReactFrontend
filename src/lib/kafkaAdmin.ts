@@ -14,6 +14,29 @@ export type ConsumerGroupSummary = {
   totalLag?: number;
 };
 
+export interface AssignedPartition {
+  topic: string;
+  partition: number;
+  committedOffset: number;
+  latestOffset: number;
+  lag: number;
+}
+
+export interface MemberInfo {
+  consumerId: string;
+  clientId: string;
+  host: string;
+  assignedPartitions: AssignedPartition[];
+}
+
+export interface GroupDetail {
+  groupId: string;
+  state: string;
+  coordinator: string;
+  members: MemberInfo[];
+  totalLag: number;
+}
+
 // === Topics ===
 export const listTopics = () => http.get<string[]>(API_CONFIG.ENDPOINTS.TOPICS);
 
@@ -40,3 +63,6 @@ export const listConsumerGroupSummaries = () =>
 
 export const deleteConsumerGroup = (groupId: string) =>
   http.del<string>(API_CONFIG.ENDPOINTS.CONSUMER_GROUP_DELETE(groupId), 'text');
+
+export const getConsumerGroupDetail = (groupId: string) =>
+  http.get<GroupDetail>(API_CONFIG.ENDPOINTS.CONSUMER_GROUP_DETAIL(groupId));

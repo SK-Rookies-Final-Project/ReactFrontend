@@ -17,6 +17,7 @@ export const API_CONFIG = {
     CONSUMER_GROUPS_SUMMARY: '/api/kafka/consumer-groups/summary', // GET 요약
     CONSUMER_GROUP_DELETE: (groupId: string) =>
       `/api/kafka/consumer-groups/${encodeURIComponent(groupId)}`, // DELETE
+    CONSUMER_GROUP_DETAIL: (groupId: string) => `/api/consumer-groups/${groupId}`,
 
   }
 } as const;
