@@ -164,6 +164,18 @@ const toMapBy = (res?: unknown[], label: string = 'instance') => {
   return m
 }
 
+// Convert Prometheus vector result to { instance -> labelValue } for a given label
+const toLabelByInstance = (res?: unknown[], label: string) => {
+  const m = new Map<string, string>()
+  for (const r of res || []) {
+    const item = r as { metric?: Record<string, string> }
+    const inst = item.metric?.instance
+    const v = item.metric?.[label]
+    if (inst && v) m.set(inst, v)
+  }
+  return m
+}
+
 // Union of instance keys from multiple maps
 const unionInstances = (...maps: Map<string, number>[]) => {
   const s = new Set<string>()
@@ -190,8 +202,11 @@ export default function PrometheusPage() {
   // Prometheus 'up' by job/instance
   const upAll = usePoll((signal) =>
     promQuery(`up{job=~"prometheus|node-exporter|kafka-controllers|kafka-brokers|schema-registry|connect|control-center|flink"}`, signal), POLL_MS)
-  
-  
+
+  // Node inventory (labels per node)
+  const nodesUp = usePoll((signal) =>
+    promQuery(`up{job="node-exporter"}`, signal), POLL_MS)
+
   // Optional: blackbox_exporter HTTP checks (1 = healthy)
   const probe = usePoll((signal) =>
     promQuery(`probe_success{job="blackbox-http"}`, signal), POLL_MS)
@@ -651,6 +666,65 @@ const topicBytesOut = usePoll((signal) =>
         )}
       </section>
 
+      {/* Section: Node Inventory */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">노드 인벤토리 (node_exporter)</h2>
+        {nodesUp.error && (
+          <div className="text-red-600 text-sm mb-4">
+            {nodesUp.error.message}
+          </div>
+        )}
+        {(() => {
+          const hostnames = toLabelByInstance(nodesUp.data, 'hostname')
+          const roles = toLabelByInstance(nodesUp.data, 'role')
+          const envs = toLabelByInstance(nodesUp.data, 'env')
+          // Build rows from nodesUp (even if some nodes have UP=0)
+          const rows = (nodesUp.data || []).map((r: unknown) => {
+            const item = r as { metric: Record<string, string>; value: [number, string] }
+            const inst = item.metric.instance
+            const up = Number(item.value?.[1]) === 1
+            return {
+              instance: inst,
+              hostname: hostnames.get(inst) || item.metric.hostname || inst,
+              role: roles.get(inst) || item.metric.role || '',
+              env: envs.get(inst) || item.metric.env || '',
+              up
+            }
+          })
+          if (rows.length === 0) {
+            return <div className="text-gray-500 text-sm">node_exporter 타깃이 없습니다. 각 호스트에서 :9100 포트를 확인하세요.</div>
+          }
+          return (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Hostname</th>
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Instance</th>
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Role</th>
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Env</th>
+                    <th className="text-left p-2 text-gray-900 dark:text-white">상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.sort((a,b) => a.hostname.localeCompare(b.hostname)).map((row) => (
+                    <tr key={row.instance} className="border-b border-gray-100 dark:border-gray-800">
+                      <td className="p-2 text-gray-900 dark:text-white">{row.hostname}</td>
+                      <td className="p-2 text-gray-900 dark:text-white">{row.instance}</td>
+                      <td className="p-2 text-gray-900 dark:text-white">{row.role || '—'}</td>
+                      <td className="p-2 text-gray-900 dark:text-white">{row.env || '—'}</td>
+                      <td className={`p-2 font-medium ${row.up ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {row.up ? 'UP' : 'DOWN'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
+      </section>
+
       {/* Section: Host resource */}
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Host Resources</h2>
@@ -674,11 +748,15 @@ const topicBytesOut = usePoll((signal) =>
           const mTX  = toMap(netTx.data)
           const rows = unionInstances(mCPU, mMem, mDU, mDR, mDW, mRX, mTX)
           if (rows.length === 0) return null
+          const hostnames = toLabelByInstance(nodesUp.data, 'hostname')
+          const roles = toLabelByInstance(nodesUp.data, 'role')
           return (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Hostname</th>
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Role</th>
                     <th className="text-left p-2 text-gray-900 dark:text-white">instance</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">CPU %</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">Mem %</th>
@@ -692,6 +770,8 @@ const topicBytesOut = usePoll((signal) =>
                 <tbody>
                   {rows.map((inst) => (
                     <tr key={inst} className="border-b border-gray-100 dark:border-gray-800">
+                      <td className="p-2 text-gray-900 dark:text-white">{hostnames.get(inst) || inst}</td>
+                      <td className="p-2 text-gray-900 dark:text-white">{roles.get(inst) || '—'}</td>
                       <td className="p-2 text-gray-900 dark:text-white">{inst}</td>
                       <td className={`p-2 text-right font-medium ${getPercentColor(mCPU.get(inst))}`}>
                         {n(mCPU.get(inst))}%
@@ -739,11 +819,15 @@ const topicBytesOut = usePoll((signal) =>
           const mTCP = toMap(tcpConnections.data)
           const rows = unionInstances(mLoad1, mLoad5, mLoad15, mFDUsed, mFDMax, mProcess, mUptime, mSwap, mTemp, mTCP)
           if (rows.length === 0) return null
+          const hostnames = toLabelByInstance(nodesUp.data, 'hostname')
+          const roles = toLabelByInstance(nodesUp.data, 'role')
           return (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Hostname</th>
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Role</th>
                     <th className="text-left p-2 text-gray-900 dark:text-white">instance</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">Load 1m</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">Load 5m</th>
@@ -765,6 +849,8 @@ const topicBytesOut = usePoll((signal) =>
                     const fdPercent = fdUsedVal && fdMaxVal ? (fdUsedVal / fdMaxVal * 100) : undefined
                     return (
                       <tr key={inst} className="border-b border-gray-100 dark:border-gray-800">
+                        <td className="p-2 text-gray-900 dark:text-white">{hostnames.get(inst) || inst}</td>
+                        <td className="p-2 text-gray-900 dark:text-white">{roles.get(inst) || '—'}</td>
                         <td className="p-2 text-gray-900 dark:text-white">{inst}</td>
                         <td className={`p-2 text-right font-medium ${getLoadColor(mLoad1.get(inst))}`}>
                           {n(mLoad1.get(inst), 2)}
@@ -811,11 +897,13 @@ const topicBytesOut = usePoll((signal) =>
           const mAC  = toMap(activeController.data)
           const rows = unionInstances(mURP, mOFF, mAC)
           if (rows.length === 0) return null
+          const hostnames = toLabelByInstance(nodesUp.data, 'hostname')
           return (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Hostname</th>
                     <th className="text-left p-2 text-gray-900 dark:text-white">instance</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">URP</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">Offline Partitions</th>
@@ -829,6 +917,7 @@ const topicBytesOut = usePoll((signal) =>
                     const controller = mAC.get(inst) || 0
                     return (
                       <tr key={inst} className="border-b border-gray-100 dark:border-gray-800">
+                        <td className="p-2 text-gray-900 dark:text-white">{hostnames.get(inst) || inst}</td>
                         <td className="p-2 text-gray-900 dark:text-white">{inst}</td>
                         <td className={`p-2 text-right font-medium ${urp > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                           {n(urp, 0)}
@@ -928,11 +1017,13 @@ const topicBytesOut = usePoll((signal) =>
               </div>
             )
           }
+          const hostnames = toLabelByInstance(nodesUp.data, 'hostname')
           return (
             <div className="overflow-x-auto">
               <table className="min-w-full border-collapse">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left p-2 text-gray-900 dark:text-white">Hostname</th>
                     <th className="text-left p-2 text-gray-900 dark:text-white">브로커(instance)</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">초당 유입률 (Bytes In)</th>
                     <th className="text-right p-2 text-gray-900 dark:text-white">초당 유출률 (Bytes Out)</th>
@@ -941,6 +1032,7 @@ const topicBytesOut = usePoll((signal) =>
                 <tbody>
                   {rows.map((inst) => (
                     <tr key={inst} className="border-b border-gray-100 dark:border-gray-800">
+                      <td className="p-2 text-gray-900 dark:text-white">{hostnames.get(inst) || inst}</td>
                       <td className="p-2 text-gray-900 dark:text-white">{inst}</td>
                       <td className="p-2 text-right text-gray-900 dark:text-white">{fmtBytes(mIN.get(inst))}</td>
                       <td className="p-2 text-right text-gray-900 dark:text-white">{fmtBytes(mOUT.get(inst))}</td>
